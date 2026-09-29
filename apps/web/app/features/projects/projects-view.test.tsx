@@ -29,7 +29,7 @@ describe("ProjectsView", () => {
       screen.getByRole("link", { name: "Create Project" }),
     ).toHaveAttribute("href", "/projects/new");
     expect(screen.getByRole("heading", { name: "Alpha" })).toBeInTheDocument();
-    expect(screen.getByText("active")).toHaveClass("project-status");
+    expect(screen.getByText("active")).toHaveClass("rounded-full");
     expect(screen.getByRole("link", { name: "Alpha" })).toHaveAttribute(
       "href",
       "/projects/project_alpha",
@@ -53,7 +53,7 @@ describe("ProjectsView", () => {
       { wrapper: MemoryRouter },
     );
 
-    expect(screen.getByText("archived")).toHaveClass("project-status");
+    expect(screen.getByText("archived")).toHaveClass("rounded-full");
     expect(screen.getByRole("link", { name: "Alpha" })).toHaveAttribute(
       "href",
       "/projects/project_archived",

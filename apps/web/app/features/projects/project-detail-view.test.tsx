@@ -67,7 +67,7 @@ describe("ProjectDetailView", () => {
     render(<ProjectDetailView project={activeProject} />);
 
     expect(screen.getByRole("heading", { name: "Alpha" })).toBeInTheDocument();
-    expect(screen.getByText("active")).toHaveClass("project-status");
+    expect(screen.getByText("active")).toHaveClass("rounded-full");
     expect(screen.getByText("Version: 1")).toBeInTheDocument();
     expect(
       screen.getByRole("link", { name: "Projects に戻る" }),
@@ -101,7 +101,7 @@ describe("ProjectDetailView", () => {
       <ProjectDetailView project={{ ...activeProject, status: "archived" }} />,
     );
 
-    expect(screen.getByText("archived")).toHaveClass("project-status");
+    expect(screen.getByText("archived")).toHaveClass("rounded-full");
     expect(screen.queryByLabelText("Project name")).not.toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: "Save changes" }),
@@ -645,7 +645,7 @@ describe("ProjectDetailView", () => {
       />,
     );
 
-    expect(screen.getByText("archived")).toHaveClass("project-status");
+    expect(screen.getByText("archived")).toHaveClass("rounded-full");
     expect(screen.queryByLabelText("Project name")).not.toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: "Archive Project" }),

@@ -3,6 +3,16 @@ import type { ChangeEvent, ElementType } from "react";
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
 import {
+  dangerButtonClass,
+  dangerOutlineButtonClass,
+  fieldLabelClass,
+  ghostButtonClass,
+  pageMainClass,
+  primaryButtonClass,
+  statusBadgeClass,
+  textInputClass,
+} from "../../components/ui-classes.js";
+import {
   ProjectMutationError,
   projectMutationErrorId,
   projectNameMaxLength,
@@ -97,18 +107,25 @@ export function ProjectDetailView({
   ]);
 
   return (
-    <main>
-      <Link to="/projects">Projects に戻る</Link>
-      <h1>{name}</h1>
-      <p>
-        <span className="project-status">{status}</span>
+    <main className={pageMainClass}>
+      <Link
+        className="inline-flex items-center gap-1 text-sm font-semibold text-blue-600 no-underline hover:underline dark:text-blue-400"
+        to="/projects"
+      >
+        Projects に戻る
+      </Link>
+      <h1 className="mt-4 text-2xl font-extrabold tracking-tight">{name}</h1>
+      <p className="mt-3">
+        <span className={statusBadgeClass}>{status}</span>
       </p>
-      <p>Version: {project.version}</p>
-      <time dateTime={project.updatedAt}>{project.updatedAt}</time>
+      <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-slate-500 dark:text-slate-400">
+        <p>Version: {project.version}</p>
+        <time dateTime={project.updatedAt}>{project.updatedAt}</time>
+      </div>
       {status === "active" ? (
         <>
           <FormComponent
-            className="project-form project-detail-form"
+            className="mt-6 grid gap-3 rounded-xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900"
             method="post"
           >
             <input name="intent" type="hidden" value="update" />
@@ -117,9 +134,12 @@ export function ProjectDetailView({
               type="hidden"
               value={nameDraft?.version ?? project.version}
             />
-            <label htmlFor="project-name">Project name</label>
+            <label className={fieldLabelClass} htmlFor="project-name">
+              Project name
+            </label>
             <input
               aria-describedby={projectMutationErrorId(fieldErrors, problem)}
+              className={textInputClass}
               id="project-name"
               maxLength={projectNameMaxLength}
               name="name"
@@ -135,27 +155,41 @@ export function ProjectDetailView({
               value={nameDraft?.name ?? project.name}
             />
             <ProjectMutationError fieldErrors={fieldErrors} problem={problem} />
-            <button disabled={pending} type="submit">
+            <button
+              className={primaryButtonClass}
+              disabled={pending}
+              type="submit"
+            >
               Save changes
             </button>
           </FormComponent>
           {archiveConfirmationVisible ? (
             <FormComponent
-              className="project-archive-confirmation"
+              className="mt-6 flex flex-wrap items-center gap-3 rounded-xl border border-red-200 bg-red-50 p-4 dark:border-red-900 dark:bg-red-950"
               method="post"
             >
               <input name="intent" type="hidden" value="archive" />
               <input name="version" type="hidden" value={project.version} />
-              <p role="alert">Archiving cannot be undone.</p>
+              <p
+                className="basis-full text-sm font-semibold text-red-700 dark:text-red-300"
+                role="alert"
+              >
+                Archiving cannot be undone.
+              </p>
               <ProjectMutationError
                 fieldErrors={fieldErrors}
                 identified={false}
                 problem={problem}
               />
-              <button disabled={pending} type="submit">
+              <button
+                className={dangerButtonClass}
+                disabled={pending}
+                type="submit"
+              >
                 Confirm archive
               </button>
               <button
+                className={ghostButtonClass}
                 disabled={pending}
                 onClick={() => setArchiveConfirmationVisible(false)}
                 type="button"
@@ -165,7 +199,7 @@ export function ProjectDetailView({
             </FormComponent>
           ) : (
             <button
-              className="project-archive-button"
+              className={`${dangerOutlineButtonClass} mt-6`}
               disabled={pending}
               onClick={() => setArchiveConfirmationVisible(true)}
               type="button"

@@ -2,6 +2,7 @@ import { ApiError } from "@starter/api-client";
 import { useQuery } from "@tanstack/react-query";
 import { useRevalidator, useRouteError } from "react-router";
 import { ProjectsErrorView } from "../features/projects/projects-error-view.js";
+import { ghostButtonClass, pageMainClass } from "../components/ui-classes.js";
 import {
   projectsListKey,
   projectsListQueryOptions,
@@ -15,7 +16,11 @@ export async function clientLoader() {
 clientLoader.hydrate = true as const;
 
 function ProjectsHydrateFallback() {
-  return <main aria-busy="true">Projects を読み込んでいます。</main>;
+  return (
+    <main aria-busy="true" className={pageMainClass}>
+      Projects を読み込んでいます。
+    </main>
+  );
 }
 
 export default function ProjectsRoute() {
@@ -36,10 +41,17 @@ export default function ProjectsRoute() {
   return (
     <>
       {staleAfterFailedRefetch ? (
-        <p className="projects-stale-notice" role="status">
+        <p
+          className="flex flex-wrap items-center gap-3 rounded-xl border border-slate-200 border-l-4 border-l-blue-600 bg-white p-4 text-sm shadow-sm dark:border-slate-800 dark:border-l-blue-500 dark:bg-slate-900"
+          role="status"
+        >
           最新の Projects
           を取得できませんでした。表示中の内容は最後に取得できたものです。
-          <button onClick={() => void refetch()} type="button">
+          <button
+            className={ghostButtonClass}
+            onClick={() => void refetch()}
+            type="button"
+          >
             再取得
           </button>
         </p>

@@ -12,6 +12,15 @@ import {
 } from "react-router";
 import type { Route } from "./+types/root";
 import { AppLoading } from "./components/app-loading.js";
+import {
+  alertBoxClass,
+  alertCodeClass,
+  alertDetailClass,
+  alertMessageClass,
+  pageMainClass,
+  pageTitleClass,
+  primaryButtonClass,
+} from "./components/ui-classes.js";
 import stylesheet from "./styles.css?url";
 import { queryClient } from "./lib/query-client.js";
 
@@ -28,7 +37,7 @@ export function Layout({ children }: { children: ReactElement }) {
         <Meta />
         <Links />
       </head>
-      <body>
+      <body className="bg-slate-100 text-slate-900 antialiased dark:bg-slate-950 dark:text-slate-100">
         {children}
         <ScrollRestoration />
         <Scripts />
@@ -56,17 +65,21 @@ export function ErrorBoundary() {
   const requestId = error instanceof ApiError ? error.requestId : undefined;
 
   return (
-    <main>
-      <h1>問題が発生しました。</h1>
-      <div role="alert">
-        <p>ページを表示できませんでした。</p>
+    <main className={`${pageMainClass} text-center`}>
+      <h1 className={pageTitleClass}>問題が発生しました。</h1>
+      <div className={`${alertBoxClass} text-left`} role="alert">
+        <p className={alertMessageClass}>ページを表示できませんでした。</p>
         {requestId ? (
-          <p>
-            Request ID: <code>{requestId}</code>
+          <p className={alertDetailClass}>
+            Request ID: <code className={alertCodeClass}>{requestId}</code>
           </p>
         ) : null}
       </div>
-      <button type="button" onClick={() => void revalidator.revalidate()}>
+      <button
+        className={`${primaryButtonClass} mt-4`}
+        type="button"
+        onClick={() => void revalidator.revalidate()}
+      >
         再試行
       </button>
     </main>

@@ -216,7 +216,7 @@ test("shows the newer Project first from the cached list after returning through
   let api: ApiProcess | undefined;
   let releaseList: (() => void) | undefined;
   let heldListRoute: ((route: Route) => Promise<void>) | undefined;
-  const projectHeadings = page.locator(".project-list h2");
+  const projectHeadings = page.locator("main ul h2");
 
   try {
     api = await startApi("success");

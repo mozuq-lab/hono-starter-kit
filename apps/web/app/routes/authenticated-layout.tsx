@@ -9,6 +9,11 @@ import {
 } from "react-router";
 import { ApiError, authUrls } from "@starter/api-client";
 import { AppErrorView } from "../components/app-error-view.js";
+import {
+  alertBoxClass,
+  alertMessageClass,
+  ghostButtonClass,
+} from "../components/ui-classes.js";
 import { authClient } from "../lib/api-client.js";
 import {
   isSessionExpired,
@@ -77,17 +82,32 @@ function AuthenticatedLayout({
 
   return (
     <>
-      <header className="app-header">
-        <Link className="app-title" to="/projects">
+      <header className="sticky top-0 z-10 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-slate-200 bg-white/90 px-6 py-3 backdrop-blur dark:border-slate-800 dark:bg-slate-900/90">
+        <Link
+          className="inline-flex items-center gap-2 text-base font-extrabold text-slate-900 no-underline dark:text-slate-100"
+          to="/projects"
+        >
+          <span
+            aria-hidden="true"
+            className="h-3 w-3 rounded-full bg-blue-600 dark:bg-blue-400"
+          />
           Hono Starter Kit
         </Link>
-        <nav aria-label="Primary">
-          <Link to="/projects">Projects</Link>
+        <nav aria-label="Primary" className="flex items-center gap-1">
+          <Link
+            className="rounded-full px-3 py-1.5 text-sm font-semibold text-slate-500 no-underline hover:bg-blue-50 hover:text-blue-700 dark:text-slate-400 dark:hover:bg-blue-950 dark:hover:text-blue-300"
+            to="/projects"
+          >
+            Projects
+          </Link>
         </nav>
-        <div className="session-controls">
-          <span>{userName}</span>
+        <div className="flex items-center gap-3">
+          <span className="max-w-64 truncate rounded-full bg-blue-50 px-3 py-1 text-sm font-semibold text-slate-700 dark:bg-blue-950 dark:text-slate-200">
+            {userName}
+          </span>
           <button
             aria-busy={logoutPending}
+            className={ghostButtonClass}
             disabled={logoutPending}
             onClick={() => void logout()}
             type="button"
@@ -96,8 +116,10 @@ function AuthenticatedLayout({
           </button>
         </div>
         {logoutFailed ? (
-          <p className="logout-error" role="alert">
-            Sign out failed. Please try again.
+          <p className={`${alertBoxClass} w-full`} role="alert">
+            <span className={alertMessageClass}>
+              Sign out failed. Please try again.
+            </span>
           </p>
         ) : null}
       </header>

@@ -22,6 +22,7 @@ import {
   projectsDetailQueryOptions,
 } from "../features/projects/projects-query.js";
 import { queryClient, retryTransientFailureOnce } from "../lib/query-client.js";
+import { pageMainClass, pageTitleClass } from "../components/ui-classes.js";
 
 const getProjectId = (projectId: string | undefined) =>
   projectIdSchema.parse(projectId);
@@ -58,7 +59,11 @@ export async function clientAction({
 }
 
 function ProjectDetailHydrateFallback() {
-  return <main aria-busy="true">Project を読み込んでいます。</main>;
+  return (
+    <main aria-busy="true" className={pageMainClass}>
+      Project を読み込んでいます。
+    </main>
+  );
 }
 
 export default function ProjectDetailRoute() {
@@ -94,9 +99,14 @@ export function ErrorBoundary() {
 
   if (error instanceof ApiError && error.code === "PROJECT_NOT_FOUND") {
     return (
-      <main>
-        <h1>Project が見つかりません。</h1>
-        <Link to="/projects">Projects に戻る</Link>
+      <main className={pageMainClass}>
+        <h1 className={pageTitleClass}>Project が見つかりません。</h1>
+        <Link
+          className="inline-flex items-center gap-1 text-sm font-semibold text-blue-600 no-underline hover:underline dark:text-blue-400"
+          to="/projects"
+        >
+          Projects に戻る
+        </Link>
       </main>
     );
   }

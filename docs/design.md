@@ -13,6 +13,7 @@
 | 領域           | 採用                                           |
 | -------------- | ---------------------------------------------- |
 | UI             | React 19                                       |
+| スタイル       | Tailwind CSS 4（ユーティリティファースト）     |
 | ビルド         | Vite 8                                         |
 | ルーティング   | React Router 8 Framework Mode、SPA設定         |
 | サーバー状態   | TanStack Query                                 |

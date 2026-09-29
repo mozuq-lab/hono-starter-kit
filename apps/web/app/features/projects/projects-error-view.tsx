@@ -1,3 +1,13 @@
+import {
+  alertBoxClass,
+  alertCodeClass,
+  alertDetailClass,
+  alertMessageClass,
+  pageMainClass,
+  pageTitleClass,
+  primaryButtonClass,
+} from "../../components/ui-classes.js";
+
 export function ProjectsErrorView({
   requestId,
   onRetry,
@@ -6,17 +16,21 @@ export function ProjectsErrorView({
   onRetry: () => void;
 }) {
   return (
-    <main>
-      <h1>Projects</h1>
-      <div role="alert">
-        <p>Projects を読み込めませんでした。</p>
+    <main className={`${pageMainClass} text-center`}>
+      <h1 className={pageTitleClass}>Projects</h1>
+      <div className={`${alertBoxClass} text-left`} role="alert">
+        <p className={alertMessageClass}>Projects を読み込めませんでした。</p>
         {requestId ? (
-          <p>
-            Request ID: <code>{requestId}</code>
+          <p className={alertDetailClass}>
+            Request ID: <code className={alertCodeClass}>{requestId}</code>
           </p>
         ) : null}
       </div>
-      <button type="button" onClick={onRetry}>
+      <button
+        className={`${primaryButtonClass} mt-4`}
+        type="button"
+        onClick={onRetry}
+      >
         再試行
       </button>
     </main>

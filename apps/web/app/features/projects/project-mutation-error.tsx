@@ -4,6 +4,7 @@ import {
   type Problem,
   type ProjectProblemCode,
 } from "@starter/contracts";
+import { alertBoxClass, alertCodeClass } from "../../components/ui-classes.js";
 
 export const projectNameErrorId = "project-name-error";
 export const projectMutationProblemId = "project-mutation-problem";
@@ -70,16 +71,22 @@ export function ProjectMutationError({
   fieldErrors,
   problem,
   identified = true,
+  className = alertBoxClass,
 }: {
   fieldErrors: Record<string, string[]> | undefined;
   problem?: Problem | undefined;
   identified?: boolean;
+  className?: string;
 }) {
   const nameErrors = getNameErrors(fieldErrors);
 
   if (nameErrors.length > 0) {
     return (
-      <p id={identified ? projectNameErrorId : undefined} role="alert">
+      <p
+        className={className}
+        id={identified ? projectNameErrorId : undefined}
+        role="alert"
+      >
         {nameErrors.join(" ")}
       </p>
     );
@@ -91,7 +98,7 @@ export function ProjectMutationError({
 
   if (isProjectProblemCode(problem.code)) {
     return (
-      <p id={problemId} role="alert">
+      <p className={className} id={problemId} role="alert">
         {knownProblemMessage(problem.code)}
       </p>
     );
@@ -99,10 +106,10 @@ export function ProjectMutationError({
 
   // 未知コードでも必ず何かを返す。文言は title のみ、詳細は出さない。
   return (
-    <p id={problemId} role="alert">
+    <p className={className} id={problemId} role="alert">
       {problem.title}
-      <span className="mutation-request-id">
-        Request ID: <code>{problem.requestId}</code>
+      <span className="block font-mono text-xs text-red-700 dark:text-red-300">
+        Request ID: <code className={alertCodeClass}>{problem.requestId}</code>
       </span>
     </p>
   );

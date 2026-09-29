@@ -1,6 +1,13 @@
 import type { Problem } from "@starter/contracts";
 import type { ElementType, FormEvent } from "react";
 import {
+  fieldLabelClass,
+  pageMainClass,
+  pageTitleClass,
+  primaryButtonClass,
+  textInputClass,
+} from "../../components/ui-classes.js";
+import {
   ProjectMutationError,
   projectMutationErrorId,
   projectNameMaxLength,
@@ -27,19 +34,26 @@ export function ProjectCreateView({
   };
 
   return (
-    <main>
-      <h1>Create Project</h1>
-      <FormComponent className="project-form" method="post" onSubmit={submit}>
-        <label htmlFor="project-name">Project name</label>
+    <main className={pageMainClass}>
+      <h1 className={pageTitleClass}>Create Project</h1>
+      <FormComponent
+        className="grid gap-3 rounded-xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900"
+        method="post"
+        onSubmit={submit}
+      >
+        <label className={fieldLabelClass} htmlFor="project-name">
+          Project name
+        </label>
         <input
           aria-describedby={projectMutationErrorId(fieldErrors, problem)}
+          className={textInputClass}
           id="project-name"
           maxLength={projectNameMaxLength}
           name="name"
           required
         />
         <ProjectMutationError fieldErrors={fieldErrors} problem={problem} />
-        <button disabled={pending} type="submit">
+        <button className={primaryButtonClass} disabled={pending} type="submit">
           Create Project
         </button>
       </FormComponent>
