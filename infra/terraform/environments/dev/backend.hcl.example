@@ -1,0 +1,5 @@
+# backend は provider とは別に認証するため、対象アカウントを両方に指定する。
+bucket              = "hono-starter-kit-dev-state-123456789012"
+key                 = "hono-starter-kit/dev/terraform.tfstate"
+region              = "ap-northeast-1"
+allowed_account_ids = ["123456789012"]

@@ -1,0 +1,30 @@
+{
+  "name": "@starter/api-node",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc -b && node ../../scripts/build-api-runtime.ts",
+    "typecheck": "tsc -b --pretty false",
+    "db:migrate": "tsx src/migrate.ts",
+    "db:seed": "tsx src/seed.ts"
+  },
+  "dependencies": {
+    "@aws-sdk/client-secrets-manager": "catalog:",
+    "@hono/node-server": "catalog:",
+    "@opentelemetry/api": "catalog:",
+    "@opentelemetry/core": "catalog:",
+    "@opentelemetry/exporter-trace-otlp-proto": "catalog:",
+    "@opentelemetry/instrumentation-http": "catalog:",
+    "@opentelemetry/instrumentation-pg": "catalog:",
+    "@opentelemetry/sdk-node": "catalog:",
+    "@starter/backend": "workspace:*",
+    "@starter/database": "workspace:*",
+    "openid-client": "catalog:"
+  },
+  "devDependencies": {
+    "@types/node": "26.1.2",
+    "jose": "catalog:",
+    "tsx": "4.23.4"
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "name": "@starter/api-client",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -b --pretty false"
+  },
+  "dependencies": {
+    "@starter/contracts": "workspace:*",
+    "hono": "catalog:"
+  },
+  "devDependencies": {
+    "@starter/backend": "workspace:*"
+  }
+}

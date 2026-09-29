@@ -1,0 +1,18 @@
+project               = "hono-starter-kit"
+environment           = "dev"
+aws_account_id        = "123456789012"
+aws_region            = "ap-northeast-1"
+state_bucket_name     = "hono-starter-kit-dev-state-123456789012"
+github_owner          = "example-owner"
+github_repository     = "hono-starter-kit"
+github_default_branch = "main"
+
+create_github_oidc_provider = true
+# 既存 provider を使う場合は create_github_oidc_provider = false にし、次行を有効にする。
+# github_oidc_provider_arn = "arn:aws:iam::123456789012:oidc-provider/token.actions.githubusercontent.com"
+
+# GitHub OIDC の role は既定で作らない。使う workflow ができてから有効にする。
+# plan role: plan を実行する workflow があり、pull_request_target と workflow_run を使わないこと。
+# create_github_plan_role = false
+# deploy role: deploy workflow と、main 限定・承認者付きの GitHub environment があること。
+# create_github_deploy_role = false

@@ -1,0 +1,8 @@
+# project は bootstrap の project と同じ値にする。IAM の許可範囲と state の key が bootstrap の値から作られる。
+project        = "hono-starter-kit"
+aws_account_id = "123456789012"
+domain_prefix  = "hono-starter-kit-dev-example"
+
+# api_image には private ECR の API リポジトリで作成したイメージの固定 digest を指定する。
+# api_repository_arn にはその private ECR リポジトリの ARN を指定する。
+# adot_image には公式 AWS ADOT public ECR リポジトリの固定 digest を指定する。

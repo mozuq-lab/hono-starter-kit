@@ -1,0 +1,62 @@
+{
+  "name": "hono-starter-kit",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.15.1",
+  "devEngines": {
+    "packageManager": {
+      "name": "pnpm",
+      "version": "11.15.1",
+      "onFail": "download"
+    }
+  },
+  "engines": {
+    "node": ">=24",
+    "pnpm": "11.15.1"
+  },
+  "scripts": {
+    "db:setup": "node scripts/compose.ts setup",
+    "db:migrate": "node scripts/compose.ts migrate",
+    "db:seed": "node scripts/compose.ts seed",
+    "dev": "node scripts/compose.ts dev",
+    "dev:down": "node scripts/compose.ts down",
+    "rds-ca:check": "node --test scripts/rds-ca.test.ts",
+    "rds-ca:refresh": "node scripts/rds-ca.ts",
+    "release:api": "node scripts/release-api.ts",
+    "release:web": "node scripts/release-web.ts",
+    "terraform": "node scripts/terraform.ts",
+    "terraform:teardown": "node scripts/terraform-teardown.ts",
+    "terraform:fmt": "node scripts/terraform-checks.ts fmt",
+    "terraform:validate": "node scripts/terraform-checks.ts validate",
+    "terraform:test": "node scripts/terraform-checks.ts test",
+    "terraform:check": "node scripts/terraform-checks.ts check && node --test scripts/terraform-foundation-plan.acceptance.ts",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "lint": "pnpm typecheck && eslint . --max-warnings 0",
+    "typecheck": "pnpm -r --if-present typecheck && tsc --noEmit -p scripts/tsconfig.json",
+    "test": "pnpm --filter @starter/contracts build && node --test \"scripts/**/*.test.ts\" \"infra/terraform/**/tests/*.test.mjs\" && vitest run --coverage",
+    "test:db": "node scripts/test-database.ts",
+    "test:e2e": "pnpm --filter @starter/web test:e2e",
+    "build": "pnpm -r --if-present build",
+    "check": "pnpm format:check && pnpm lint && pnpm test && pnpm build",
+    "check:docker": "node scripts/check-docker.ts",
+    "test:csp": "pnpm --filter @starter/web test:csp"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@types/node": "26.1.2",
+    "@types/pg": "8.20.3",
+    "@vitest/coverage-v8": "4.1.10",
+    "concurrently": "10.0.4",
+    "esbuild": "catalog:",
+    "eslint": "10.7.0",
+    "jsdom": "29.1.1",
+    "parse5": "8.0.1",
+    "pg": "catalog:",
+    "prettier": "3.9.6",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.65.0",
+    "vitest": "4.1.10",
+    "zod": "catalog:"
+  }
+}

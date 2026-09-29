@@ -1,0 +1,25 @@
+{
+  "name": "@starter/backend",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./src/index.ts"
+    },
+    "./app-type": {
+      "types": "./dist/app/app-type.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -b --pretty false"
+  },
+  "dependencies": {
+    "@hono/zod-validator": "catalog:",
+    "@opentelemetry/api": "catalog:",
+    "@starter/contracts": "workspace:*",
+    "hono": "catalog:",
+    "zod": "catalog:"
+  }
+}

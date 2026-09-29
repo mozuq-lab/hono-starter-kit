@@ -1,0 +1,87 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended",
+    ":pinAllExceptPeerDependencies",
+    "helpers:pinGitHubActionDigests"
+  ],
+  "minimumReleaseAge": "3 days",
+  "schedule": ["before 9am on monday"],
+  "prConcurrentLimit": 5,
+  "dependencyDashboardApproval": true,
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "scripts/terraform.ts の TERRAFORM_IMAGE（tag と digest）",
+      "managerFilePatterns": ["/^scripts/terraform\\.ts$/"],
+      "matchStrings": [
+        "TERRAFORM_IMAGE =\\s*\"(?<depName>hashicorp/terraform):(?<currentValue>[^@\"]+)@(?<currentDigest>sha256:[a-f0-9]+)\""
+      ],
+      "datasourceTemplate": "docker"
+    },
+    {
+      "customType": "regex",
+      "description": "Dockerfile の npm install --global pnpm@",
+      "managerFilePatterns": ["/^docker/.+\\.Dockerfile$/"],
+      "matchStrings": [
+        "npm install --global pnpm@(?<currentValue>\\d+\\.\\d+\\.\\d+)"
+      ],
+      "depNameTemplate": "pnpm",
+      "datasourceTemplate": "npm"
+    },
+    {
+      "customType": "regex",
+      "description": "package.json の devEngines.packageManager.version（engines.pnpm と packageManager は npm manager が扱う）",
+      "managerFilePatterns": ["/^package\\.json$/"],
+      "matchStrings": [
+        "\"devEngines\"\\s*:\\s*\\{\\s*\"packageManager\"\\s*:\\s*\\{\\s*\"name\"\\s*:\\s*\"pnpm\",\\s*\"version\"\\s*:\\s*\"(?<currentValue>\\d+\\.\\d+\\.\\d+)\""
+      ],
+      "depNameTemplate": "pnpm",
+      "datasourceTemplate": "npm"
+    }
+  ],
+  "packageRules": [
+    {
+      "groupName": "terraform",
+      "matchDepNames": ["hashicorp/terraform"]
+    },
+    {
+      "groupName": "pnpm",
+      "matchDepNames": ["pnpm"]
+    },
+    {
+      "groupName": "node",
+      "matchDepNames": ["node"],
+      "matchManagers": ["dockerfile", "nodenv"]
+    },
+    {
+      "groupName": "terraform-providers",
+      "matchManagers": ["terraform"],
+      "matchDepTypes": ["provider", "required_provider"]
+    },
+    {
+      "groupName": "opentelemetry",
+      "matchPackageNames": ["@opentelemetry/**"]
+    },
+    {
+      "groupName": "react",
+      "matchPackageNames": [
+        "react",
+        "react-dom",
+        "react-router",
+        "react-router-dom",
+        "@types/react",
+        "@types/react-dom"
+      ]
+    },
+    {
+      "groupName": "aws-sdk",
+      "matchPackageNames": ["@aws-sdk/**", "@smithy/**"]
+    },
+    {
+      "groupName": "dev-dependencies",
+      "matchDepTypes": ["devDependencies"],
+      "matchUpdateTypes": ["minor", "patch"]
+    }
+  ]
+}

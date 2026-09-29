@@ -1,0 +1,15 @@
+{
+  "name": "@starter/api-runtime-dependencies",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@aws-sdk/client-secrets-manager": "catalog:",
+    "@opentelemetry/api": "catalog:",
+    "@opentelemetry/core": "catalog:",
+    "@opentelemetry/exporter-trace-otlp-proto": "catalog:",
+    "@opentelemetry/instrumentation-http": "catalog:",
+    "@opentelemetry/instrumentation-pg": "catalog:",
+    "@opentelemetry/sdk-node": "catalog:",
+    "pg": "catalog:"
+  }
+}

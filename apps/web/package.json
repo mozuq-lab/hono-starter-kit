@@ -1,0 +1,31 @@
+{
+  "name": "@starter/web",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "react-router dev --host 127.0.0.1 --port 5173",
+    "build": "react-router build && node ../../scripts/externalize-web-scripts.ts",
+    "typecheck": "react-router typegen && tsc --noEmit",
+    "test:e2e": "playwright test",
+    "test:csp": "pnpm build && playwright test --config playwright.csp.config.ts"
+  },
+  "dependencies": {
+    "@starter/api-client": "workspace:*",
+    "@starter/contracts": "workspace:*",
+    "@tanstack/react-query": "catalog:",
+    "isbot": "5.2.1",
+    "react": "catalog:",
+    "react-dom": "catalog:",
+    "react-router": "catalog:"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.62.1",
+    "@react-router/dev": "catalog:",
+    "@testing-library/jest-dom": "7.0.0",
+    "@testing-library/react": "16.3.2",
+    "@testing-library/user-event": "14.6.1",
+    "@types/react": "19.2.18",
+    "@types/react-dom": "19.2.4",
+    "vite": "catalog:"
+  }
+}
