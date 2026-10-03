@@ -87,6 +87,19 @@ const archiveRequest = (version = "1") =>
     body: new URLSearchParams({ intent: "archive", version }),
   });
 
+// 警告や Version の表示は、fetcher が再検証を終える前（loading）に変わる。loading の間は
+// 入力欄が送信値を楽観表示しボタンも無効になる。idle に戻った後も、下書きの値と送信する
+// version を確定値へ寄せるのは次の passive effect なので、ボタンの有効化に加えてその結果まで
+// 待ってから値を確かめたり再送したりする。
+const waitForSaveSettled = (expected: { name: string; version: string }) =>
+  waitFor(() => {
+    expect(screen.getByRole("button", { name: "Save changes" })).toBeEnabled();
+    expect(screen.getByLabelText("Project name")).toHaveValue(expected.name);
+    expect(
+      document.querySelector('input[type="hidden"][name="version"]'),
+    ).toHaveValue(expected.version);
+  });
+
 beforeEach(() => {
   vi.clearAllMocks();
   queryClient.clear();
@@ -456,6 +469,7 @@ describe("ProjectDetailRoute の下書き競合", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "Project was updated on the server.",
     );
+    await waitForSaveSettled({ name: "  My draft  ", version: "2" });
     expect(updateProject).toHaveBeenNthCalledWith(1, "project_alpha", {
       name: "  My draft  ",
       version: 1,
@@ -472,9 +486,8 @@ describe("ProjectDetailRoute の下書き競合", () => {
       version: 2,
     });
     expect(await screen.findByText("Version: 3")).toBeInTheDocument();
-    await waitFor(() =>
-      expect(screen.queryByRole("alert")).not.toBeInTheDocument(),
-    );
+    await waitForSaveSettled({ name: "My draft", version: "3" });
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     expect(screen.getByLabelText("Project name")).toHaveValue("My draft");
   });
 });
