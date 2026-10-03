@@ -165,6 +165,62 @@ describe("Node composition", () => {
     expect(logLines.join("\n")).not.toContain(cookie.split("=", 2)[1]!);
   });
 
+  it("records a failed OIDC callback as one warn line without the provider's message", async () => {
+    const authConfig = resolveAuthConfig({
+      NODE_ENV: "test",
+      AUTH_PROVIDER: "oidc",
+      APP_ORIGIN: "http://127.0.0.1:5173",
+      OIDC_ISSUER: "http://127.0.0.1:4000",
+      OIDC_CLIENT_ID: "public-client-id",
+      OIDC_LOGOUT_ENDPOINT: "http://127.0.0.1:4000/logout",
+    });
+    const state = "state-0123456789012345678901234567";
+    const provider: ExternalIdentityProvider = {
+      begin: () =>
+        Promise.resolve({
+          authorizationUrl: `http://127.0.0.1:4000/authorize?state=${state}`,
+          state,
+          nonce: "nonce-0123456789012345678901234567",
+          verifier: "verifier-0123456789012345678901234567",
+        }),
+      complete: () =>
+        Promise.reject(new Error("invalid_client token=must-not-leak")),
+      logoutUrl: () => "http://127.0.0.1:4000/logout",
+    };
+    const logLines: string[] = [];
+    const app = createNodeApp({
+      ...createFixturePersistence("success"),
+      authStore: new InMemoryAuthSessionStore(),
+      externalLoginTransactionStore:
+        new InMemoryExternalLoginTransactionStore(),
+      authConfig,
+      createIdentityProvider: () => provider,
+      writeLog: (line) => {
+        logLines.push(line);
+      },
+    });
+
+    const login = await app.request("/auth/login");
+    const callback = await app.request(
+      `/auth/callback?state=${state}&code=authorization-code`,
+      { headers: { Cookie: responseCookie(login) } },
+    );
+
+    expect(callback.headers.get("location")).toBe(
+      "/login?error=authentication_failed",
+    );
+    const warnLines = logLines
+      .map((line) => JSON.parse(line) as Record<string, unknown>)
+      .filter((entry) => entry.level === "warn");
+    expect(warnLines).toHaveLength(1);
+    expect(warnLines[0]).toMatchObject({
+      message: "suppressed error",
+      operation: "auth.external-login-callback",
+      errorName: "Error",
+    });
+    expect(logLines.join("\n")).not.toContain("must-not-leak");
+  });
+
   it("composes the external login flow with the injected identity provider", async () => {
     const authConfig = resolveAuthConfig({
       NODE_ENV: "test",

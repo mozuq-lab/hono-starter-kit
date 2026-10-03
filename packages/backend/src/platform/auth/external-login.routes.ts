@@ -1,5 +1,9 @@
 import { Hono, type Context } from "hono";
 import type { AppEnv } from "../../app/app-env.js";
+import {
+  ignoreSuppressedError,
+  type ReportSuppressedError,
+} from "../errors/report-suppressed-error.js";
 import type { BeginExternalLogin } from "./begin-external-login.js";
 import type { CompleteExternalLogin } from "./complete-external-login.js";
 import type { EstablishSession } from "./establish-session.js";
@@ -22,12 +26,23 @@ const failureDestination = "/login?error=authentication_failed";
 const fail = (context: Context<AppEnv>) =>
   context.redirect(failureDestination, 303);
 
+// 例外ではない拒否も記録に載せるための印。理由は operation で区別し、クエリや Cookie の値、
+// IdP が返したエラーコードは持たせない（どれも外から送り込める値）。
+class ExternalLoginCallbackRejected extends Error {
+  override readonly name = "ExternalLoginCallbackRejected";
+}
+
+// 応答はどの失敗でも同じ 303 にして理由を外へ見せないが、運用者にはクライアントの設定誤り、
+// CloudFront 経由で取引用 Cookie が届かない、IdP や DB に届かない、を見分けられるようにする。
+const callbackOperation = "auth.external-login-callback";
+
 export const createExternalLoginRoutes = ({
   beginExternalLogin,
   completeExternalLogin,
   establishSession,
   providerLogoutUrl,
   redirectUri,
+  reportSuppressedError = ignoreSuppressedError,
   sessionCookie,
   transactionCookie,
 }: {
@@ -36,10 +51,18 @@ export const createExternalLoginRoutes = ({
   establishSession: EstablishSession;
   providerLogoutUrl: string;
   redirectUri: string;
+  reportSuppressedError?: ReportSuppressedError;
   sessionCookie: SessionCookieConfig;
   transactionCookie: ExternalLoginCookieConfig;
 }) => {
   const routes = new Hono<AppEnv>();
+  const reject = (context: Context<AppEnv>, reason: string) => {
+    reportSuppressedError({
+      operation: `${callbackOperation}.${reason}`,
+      error: new ExternalLoginCallbackRejected(reason),
+    });
+    return fail(context);
+  };
 
   return routes
     .get("/login", async (context) => {
@@ -66,15 +89,15 @@ export const createExternalLoginRoutes = ({
       const errors = callbackUrl.searchParams.getAll("error");
       const hasCode = codes.length === 1 && codes[0] !== "";
       const hasError = errors.length === 1 && errors[0] !== "";
+      if (cookie === undefined) return reject(context, "missing-transaction");
       if (
-        cookie === undefined ||
         states.length !== 1 ||
         states[0] === "" ||
         hasCode === hasError ||
         (!hasCode && codes.length !== 0) ||
         (!hasError && errors.length !== 0)
       ) {
-        return fail(context);
+        return reject(context, "invalid-query");
       }
 
       try {
@@ -84,7 +107,7 @@ export const createExternalLoginRoutes = ({
           nonce: cookie.nonce,
           verifier: cookie.verifier,
         });
-        if (hasError) return fail(context);
+        if (hasError) return reject(context, "provider-error");
         const previousSessionId = getSessionCookie(context, sessionCookie);
         const { sessionId } = await establishSession({
           identity: completed.identity,
@@ -92,7 +115,8 @@ export const createExternalLoginRoutes = ({
         });
         setSessionCookie(context, sessionCookie, sessionId);
         return context.redirect(completed.returnTo, 303);
-      } catch {
+      } catch (error) {
+        reportSuppressedError({ operation: callbackOperation, error });
         return fail(context);
       }
     })

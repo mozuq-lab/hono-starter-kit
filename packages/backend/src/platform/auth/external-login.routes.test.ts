@@ -13,6 +13,10 @@ import {
   type ExternalLoginCookieConfig,
 } from "./external-login.routes.js";
 import { InMemoryExternalLoginTransactionStore } from "./external-login-transaction-store.memory.js";
+import type {
+  ReportSuppressedError,
+  SuppressedErrorEvent,
+} from "../errors/report-suppressed-error.js";
 
 const redirectUri = "https://app.example/auth/callback";
 const state = "s".repeat(43);
@@ -56,9 +60,15 @@ const expectTransactionCookieCleared = (response: Response) => {
 
 const createRouteFixture = ({
   establishSession: establishSessionOverride,
+  complete: completeOverride,
 }: {
   establishSession?: EstablishSession;
+  complete?: ExternalIdentityProvider["complete"];
 } = {}) => {
+  const reported: SuppressedErrorEvent[] = [];
+  const reportSuppressedError: ReportSuppressedError = (event) => {
+    reported.push(event);
+  };
   const clock = () => new Date(now.getTime());
   const transactionStore = new InMemoryExternalLoginTransactionStore();
   const authStore = new InMemoryAuthSessionStore();
@@ -75,6 +85,7 @@ const createRouteFixture = ({
       }),
     complete: (input) => {
       completeCalls.push(input);
+      if (completeOverride !== undefined) return completeOverride(input);
       if (
         input.callbackUrl.searchParams.has("error") ||
         input.callbackUrl.searchParams.get("code") === "provider-failure"
@@ -128,6 +139,7 @@ const createRouteFixture = ({
       postLogoutRedirectUri: "https://app.example/login",
     }),
     redirectUri,
+    reportSuppressedError,
     sessionCookie,
     transactionCookie,
   });
@@ -145,7 +157,14 @@ const createRouteFixture = ({
     };
   };
 
-  return { authStore, begin, completeCalls, establishSession, routes };
+  return {
+    authStore,
+    begin,
+    completeCalls,
+    establishSession,
+    reported,
+    routes,
+  };
 };
 
 describe("external login routes", () => {
@@ -354,6 +373,98 @@ describe("external login routes", () => {
     );
     expect(fixture.completeCalls).toHaveLength(0);
     expectTransactionCookieCleared(response);
+  });
+
+  it("records nothing when the login succeeds", async () => {
+    const fixture = createRouteFixture();
+    const login = await fixture.begin();
+
+    await fixture.routes.request(
+      `/callback?state=${state}&code=authorization-code`,
+      { headers: { Cookie: login.cookie } },
+    );
+
+    expect(fixture.reported).toEqual([]);
+  });
+
+  it("records an unexpected callback failure without changing the response", async () => {
+    const fixture = createRouteFixture();
+    const login = await fixture.begin();
+
+    const response = await fixture.routes.request(
+      `/callback?state=${state}&code=provider-failure`,
+      { headers: { Cookie: login.cookie } },
+    );
+
+    expect(response.headers.get("location")).toBe(
+      "/login?error=authentication_failed",
+    );
+    expect(fixture.reported).toHaveLength(1);
+    expect(fixture.reported[0]!.operation).toBe("auth.external-login-callback");
+    expect(fixture.reported[0]!.error).toBeInstanceOf(Error);
+  });
+
+  it("records a callback that arrives without its transaction cookie", async () => {
+    const fixture = createRouteFixture();
+
+    for (const headers of [
+      {},
+      { Cookie: `${transactionCookie.name}=malformed=padding` },
+    ]) {
+      await fixture.routes.request(
+        `/callback?state=${state}&code=authorization-code`,
+        { headers },
+      );
+    }
+
+    expect(fixture.reported.map((event) => event.operation)).toEqual([
+      "auth.external-login-callback.missing-transaction",
+      "auth.external-login-callback.missing-transaction",
+    ]);
+    expect(fixture.completeCalls).toHaveLength(0);
+  });
+
+  it("records a malformed callback query without recording its values", async () => {
+    const fixture = createRouteFixture();
+    const login = await fixture.begin();
+
+    await fixture.routes.request(
+      `/callback?code=authorization-code&code=duplicate-must-not-leak`,
+      { headers: { Cookie: login.cookie } },
+    );
+
+    expect(fixture.reported).toHaveLength(1);
+    expect(fixture.reported[0]!.operation).toBe(
+      "auth.external-login-callback.invalid-query",
+    );
+    expect(JSON.stringify(fixture.reported)).not.toContain("must-not-leak");
+  });
+
+  it("records an error returned by the provider without recording its code", async () => {
+    const fixture = createRouteFixture({
+      complete: () =>
+        Promise.resolve({
+          provider: "oidc",
+          issuer: "https://issuer.example",
+          subject: "subject-1",
+          roles: [],
+        }),
+    });
+    const login = await fixture.begin();
+
+    const response = await fixture.routes.request(
+      `/callback?state=${state}&error=access_denied-must-not-leak`,
+      { headers: { Cookie: login.cookie } },
+    );
+
+    expect(response.headers.get("location")).toBe(
+      "/login?error=authentication_failed",
+    );
+    expect(fixture.reported).toHaveLength(1);
+    expect(fixture.reported[0]!.operation).toBe(
+      "auth.external-login-callback.provider-error",
+    );
+    expect(JSON.stringify(fixture.reported)).not.toContain("must-not-leak");
   });
 
   it("redirects provider logout to the exact configured URL", async () => {

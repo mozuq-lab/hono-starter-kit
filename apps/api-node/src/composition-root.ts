@@ -81,13 +81,16 @@ export const createNodeApp: ({
   writeLog = writeStdoutLine,
 }) => {
   const clock = () => new Date();
+  const reportSuppressedError = createSuppressedErrorReporter({
+    write: writeLog,
+  });
   const establishSession = createEstablishSession({
     clock,
     generateSessionId,
     generateUserId,
     hashSessionId,
     policy: authConfig.policy,
-    reportSuppressedError: createSuppressedErrorReporter({ write: writeLog }),
+    reportSuppressedError,
     store: authStore,
   });
   const authenticateSession = createAuthenticateSession({
@@ -132,6 +135,7 @@ export const createNodeApp: ({
               postLogoutRedirectUri: authConfig.oidc.postLogoutRedirectUri,
             }),
             redirectUri: authConfig.oidc.redirectUri,
+            reportSuppressedError,
             sessionCookie: authConfig.cookie,
             transactionCookie: authConfig.transactionCookie,
           });
