@@ -146,7 +146,7 @@ pnpm release:web -- --bucket <dev の output web_bucket_name> --distribution-id 
 dev の `terraform.tfvars` の `api_image` に書くので、続けて `apply` で ECS を切り替えます
 （`terraform.tfvars` がなければ、設定すべき値を表示するだけです）。
 
-`release:web` は HEAD から web を build し直し、hash 付きの asset、`index.html`（`no-cache`）、
+`release:web` は lockfile どおりに依存を入れ直してから（`pnpm install --frozen-lockfile`）HEAD から web を build し直し、hash 付きの asset、`index.html`（`no-cache`）、
 配信中の commit を示す `release.json` の順に web bucket へ置きます。`--distribution-id` を
 渡したときだけ `/index.html` の CloudFront Invalidation を行います。
 
@@ -185,6 +185,11 @@ API は stdout へ JSON を 1 行ずつ出し、ECS では CloudWatch Logs に�
 | `database connection closed` | `warn`  | サーバーが DB 接続を切った（再起動、フェイルオーバーなど）。`sqlState`（`25P03`、`57P01` など）で原因を見分ける。API は落ちず、次の要求は新しい接続で動く                |
 
 各フィールドの中身と、何を出さないかは `docs/design.md` の「13. 可観測性」にあります。
+
+起動の失敗（`API startup failed: …`）、停止の失敗（`API shutdown failed: …`）、未捕捉の例外
+（`Uncaught exception. …` / `Unhandled rejection. …`）は、JSON ではなくプレーンテキストの 1 行で
+stderr に出ます。`message` で絞ると見落とすので、ECS のタスクが止まったときはこの行も確かめて
+ください。
 
 ## 環境を削除する
 

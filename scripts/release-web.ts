@@ -92,7 +92,10 @@ export const runReleaseWeb = async ({
 
   // apps/web/build は gitignore されているので、clean な作業ツリーでも既存の build が HEAD から
   // 作られたとは限らない。ここで build し直し、置くファイルを常に HEAD（と dirty の差分）から作る。
-  // web の build script は inline script の外部化（CSP のため）まで含む。
+  // web の build script は inline script の外部化（CSP のため）まで含む。pull の後に install を
+  // 忘れると古い依存のまま build が通り、release.json だけが HEAD の commit を名乗るので、先に
+  // lockfile どおりの依存へ揃える。
+  await run("pnpm", ["install", "--frozen-lockfile"]);
   await run("pnpm", ["--filter", "@starter/web", "build"]);
   await assertReleaseGitStateUnchanged({
     before: gitState,

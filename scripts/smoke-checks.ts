@@ -88,6 +88,16 @@ const requestTimeoutMs = 10_000;
 type Sent =
   { ok: true; response: Response; body: string } | { ok: false; error: string };
 
+// Node の fetch は接続の失敗を "fetch failed" とだけ言い、本当の理由（ENOTFOUND、証明書の誤り、
+// 接続拒否）を cause に入れる。初回の実行で起きやすいこれらを見分けられるよう、cause の code を添える。
+const describeFailure = (error: unknown): string => {
+  if (!(error instanceof Error)) return String(error);
+  const cause: unknown = error.cause;
+  if (!(cause instanceof Error)) return error.message;
+  const code = (cause as NodeJS.ErrnoException).code;
+  return `${error.message} (${typeof code === "string" ? code : cause.message})`;
+};
+
 const send = async (
   fetchImpl: SmokeFetch,
   url: string,
@@ -101,10 +111,7 @@ const send = async (
     });
     return { ok: true, response, body: await response.text() };
   } catch (error) {
-    return {
-      ok: false,
-      error: error instanceof Error ? error.message : String(error),
-    };
+    return { ok: false, error: describeFailure(error) };
   }
 };
 
@@ -276,6 +283,32 @@ const checkSessionCaching = (pairs: readonly SessionPair[]): SmokeResult => {
   return result("API responses are not cached across sessions", issues);
 };
 
+// HSTS はディレクティブの順番・大文字小文字・区切りの空白に意味がなく、CloudFront が出す正確な
+// 書式は文書に無い。文字列で比べると実物の書式次第で誤って FAIL するので、ディレクティブの集合で比べる。
+const hstsDirectives = (value: string) =>
+  value
+    .split(";")
+    .map((directive) => directive.trim().toLowerCase())
+    .filter((directive) => directive !== "")
+    .sort();
+
+const headerValueMatches = (
+  header: string,
+  actual: string | null,
+  expected: string,
+) => {
+  if (actual === null) return false;
+  if (header !== "strict-transport-security") return actual === expected;
+  const actualDirectives = hstsDirectives(actual);
+  const expectedDirectives = hstsDirectives(expected);
+  return (
+    actualDirectives.length === expectedDirectives.length &&
+    actualDirectives.every(
+      (directive, index) => directive === expectedDirectives[index],
+    )
+  );
+};
+
 const checkSecurityHeaders = (
   name: string,
   sent: Sent,
@@ -285,7 +318,7 @@ const checkSecurityHeaders = (
   const issues = Object.entries(expectedHeaders).flatMap(
     ([header, expected]) => {
       const actual = sent.response.headers.get(header);
-      return actual === expected
+      return headerValueMatches(header, actual, expected)
         ? []
         : [
             `${header}: expected "${expected}", got ${actual === null ? "nothing" : `"${actual}"`}`,
