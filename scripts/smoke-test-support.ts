@@ -54,6 +54,7 @@ export const problemResponse = (
 
 export const createHealthyRoutes = (): Routes => {
   let meRequests = 0;
+  let authRequests = 0;
   return {
     "GET /": () => html(200, indexHtml),
     "GET /projects/example": () => html(200, indexHtml),
@@ -73,6 +74,14 @@ export const createHealthyRoutes = (): Routes => {
       problemResponse(401, "UNAUTHENTICATED", "request-patch"),
     "DELETE /auth/smoke": () =>
       problemResponse(404, "NOT_FOUND", "request-delete"),
+    "GET /auth/smoke-test-id": () => {
+      authRequests += 1;
+      return problemResponse(
+        404,
+        "NOT_FOUND",
+        `request-auth-${String(authRequests)}`,
+      );
+    },
     "GET /api/me": () => {
       meRequests += 1;
       return problemResponse(

@@ -96,7 +96,7 @@ test("a healthy environment passes every HTTP check", async () => {
       "Missing assets do not fall back to index.html",
       "/auth/login redirects to the identity provider",
       "POST, PATCH and DELETE reach the API",
-      "/api/me is not cached across sessions",
+      "API responses are not cached across sessions",
       "SPA responses carry the security headers",
       "API responses carry the security headers",
     ],
@@ -168,9 +168,27 @@ test("/api/me answered twice with the same requestId is reported as cached", asy
       problemResponse(401, "UNAUTHENTICATED", "request-cached"),
   });
 
-  const result = resultNamed(results, "/api/me is not cached across sessions");
+  const result = resultNamed(
+    results,
+    "API responses are not cached across sessions",
+  );
   assert.equal(result.ok, false);
   assert.match(result.detail, /requestId/u);
+});
+
+test("a cacheable API 404 answered twice with the same requestId is reported as cached", async () => {
+  // CloudFront は 401 をキャッシュしないので、/api/me だけではキャッシュする policy を見逃す。
+  const results = await runAgainst({
+    "GET /auth/smoke-test-id": () =>
+      problemResponse(404, "NOT_FOUND", "request-auth-cached"),
+  });
+
+  const result = resultNamed(
+    results,
+    "API responses are not cached across sessions",
+  );
+  assert.equal(result.ok, false);
+  assert.match(result.detail, /\/auth\/smoke-test-id/u);
 });
 
 test("/api/me served from the CloudFront cache or without no-store fails", async () => {
@@ -186,7 +204,9 @@ test("/api/me served from the CloudFront cache or without no-store fails", async
       );
     },
   });
-  assert.deepEqual(failedNames(hit), ["/api/me is not cached across sessions"]);
+  assert.deepEqual(failedNames(hit), [
+    "API responses are not cached across sessions",
+  ]);
 
   const cacheable = await runAgainst({
     "GET /api/me": () => {
@@ -200,7 +220,7 @@ test("/api/me served from the CloudFront cache or without no-store fails", async
     },
   });
   assert.deepEqual(failedNames(cacheable), [
-    "/api/me is not cached across sessions",
+    "API responses are not cached across sessions",
   ]);
 });
 
@@ -214,7 +234,7 @@ test("/api/me without a requestId fails instead of crashing", async () => {
   });
 
   assert.equal(
-    resultNamed(results, "/api/me is not cached across sessions").ok,
+    resultNamed(results, "API responses are not cached across sessions").ok,
     false,
   );
 });
@@ -276,11 +296,13 @@ test("requests send Origin on unsafe methods, distinct cookies to /api/me, and n
   for (const call of unsafe) {
     assert.equal(new Headers(call.init.headers).get("origin"), testOrigin);
   }
-  const cookies = calls
-    .filter((call) => new URL(call.url).pathname === "/api/me")
-    .map((call) => new Headers(call.init.headers).get("cookie"));
-  assert.equal(cookies.length, 2);
-  assert.notEqual(cookies[0], cookies[1]);
+  for (const pathname of ["/api/me", "/auth/smoke-test-id"]) {
+    const cookies = calls
+      .filter((call) => new URL(call.url).pathname === pathname)
+      .map((call) => new Headers(call.init.headers).get("cookie"));
+    assert.equal(cookies.length, 2, pathname);
+    assert.notEqual(cookies[0], cookies[1], pathname);
+  }
 });
 
 test("classifies private and public addresses", () => {

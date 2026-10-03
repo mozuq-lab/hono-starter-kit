@@ -227,37 +227,53 @@ const checkLoginRedirect = (origin: string, sent: Sent): SmokeResult => {
   return result(name, issues);
 };
 
-const checkSessionCaching = (first: Sent, second: Sent): SmokeResult => {
-  const issues = [
-    ...problemIssues("first /api/me", first, 401, "UNAUTHENTICATED"),
-    ...problemIssues("second /api/me", second, 401, "UNAUTHENTICATED"),
-  ];
-  const requestIds: unknown[] = [];
-  for (const [label, sent] of [
-    ["first /api/me", first],
-    ["second /api/me", second],
-  ] as const) {
-    if (!sent.ok) continue;
+type SessionPair = {
+  label: string;
+  status: number;
+  code: string;
+  first: Sent;
+  second: Sent;
+};
+
+// 別々の偽 Cookie で同じ要求を 2 回送り、どちらもオリジンが答えたことを requestId で確かめる。
+// キャッシュされた応答なら 2 回とも同じ requestId になる。CloudFront は 401 をキャッシュしないので
+// /api/me だけではキャッシュする policy を見逃す。キャッシュされうる 404 を /auth/* の未定義ルートで
+// 確かめる（/api/* と /auth/* は同じ behavior の定義から作られ、同じ cache policy を持つ）。
+const checkSessionCaching = (pairs: readonly SessionPair[]): SmokeResult => {
+  const issues: string[] = [];
+  for (const { label, status, code, first, second } of pairs) {
+    issues.push(
+      ...problemIssues(`first ${label}`, first, status, code),
+      ...problemIssues(`second ${label}`, second, status, code),
+    );
+    const requestIds: unknown[] = [];
+    for (const [ordinal, sent] of [
+      ["first", first],
+      ["second", second],
+    ] as const) {
+      if (!sent.ok) continue;
+      if (
+        !(sent.response.headers.get("cache-control") ?? "").includes("no-store")
+      ) {
+        issues.push(`${ordinal} ${label}: Cache-Control must include no-store`);
+      }
+      if ((sent.response.headers.get("x-cache") ?? "").includes("Hit")) {
+        issues.push(`${ordinal} ${label}: served from the CloudFront cache`);
+      }
+      requestIds.push(parseProblem(sent.body)?.requestId);
+    }
     if (
-      !(sent.response.headers.get("cache-control") ?? "").includes("no-store")
+      requestIds.length === 2 &&
+      (typeof requestIds[0] !== "string" ||
+        typeof requestIds[1] !== "string" ||
+        requestIds[0] === requestIds[1])
     ) {
-      issues.push(`${label}: Cache-Control must include no-store`);
+      issues.push(
+        `${label}: the two responses must carry different requestId values`,
+      );
     }
-    if ((sent.response.headers.get("x-cache") ?? "").includes("Hit")) {
-      issues.push(`${label}: served from the CloudFront cache`);
-    }
-    requestIds.push(parseProblem(sent.body)?.requestId);
   }
-  // キャッシュされた応答なら 2 回とも同じ requestId になる。別々ならどちらもオリジンまで届いている。
-  if (
-    requestIds.length === 2 &&
-    (typeof requestIds[0] !== "string" ||
-      typeof requestIds[1] !== "string" ||
-      requestIds[0] === requestIds[1])
-  ) {
-    issues.push("the two responses must carry different requestId values");
-  }
-  return result("/api/me is not cached across sessions", issues);
+  return result("API responses are not cached across sessions", issues);
 };
 
 const checkSecurityHeaders = (
@@ -322,6 +338,13 @@ export const runHttpChecks = async ({
   const secondMe = await send(fetchImpl, url("/api/me"), {
     headers: { cookie: `__Host-session=smoke-b-${randomId}` },
   });
+  const cachePath = `/auth/smoke-${randomId}`;
+  const firstMissing = await send(fetchImpl, url(cachePath), {
+    headers: { cookie: `__Host-session=smoke-a-${randomId}` },
+  });
+  const secondMissing = await send(fetchImpl, url(cachePath), {
+    headers: { cookie: `__Host-session=smoke-b-${randomId}` },
+  });
 
   return [
     checkDeepLink(root, deepLink),
@@ -340,7 +363,22 @@ export const runHttpChecks = async ({
       ),
       ...problemIssues("DELETE /auth/smoke", remove, 404, "NOT_FOUND"),
     ]),
-    checkSessionCaching(firstMe, secondMe),
+    checkSessionCaching([
+      {
+        label: "/api/me",
+        status: 401,
+        code: "UNAUTHENTICATED",
+        first: firstMe,
+        second: secondMe,
+      },
+      {
+        label: cachePath,
+        status: 404,
+        code: "NOT_FOUND",
+        first: firstMissing,
+        second: secondMissing,
+      },
+    ]),
     checkSecurityHeaders(
       "SPA responses carry the security headers",
       deepLink,
