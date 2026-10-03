@@ -2,7 +2,20 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-import { readExpectedSecurityHeaders } from "./smoke-checks.ts";
+import {
+  readExpectedSecurityHeaders,
+  runHttpChecks,
+  type SmokeResult,
+} from "./smoke-checks.ts";
+import {
+  createFakeFetch,
+  createHealthyRoutes,
+  problemResponse,
+  testHeaders,
+  testOrigin,
+  type RecordedCall,
+  type Routes,
+} from "./smoke-test-support.ts";
 
 const edgeMain = new URL(
   "../infra/terraform/modules/edge/main.tf",
@@ -48,4 +61,221 @@ test("refuses to guess when the policy can no longer be read", async () => {
   );
 
   assert.throws(() => readExpectedSecurityHeaders(source), /frame_option/u);
+});
+
+const runAgainst = (overrides: Routes = {}, calls: RecordedCall[] = []) =>
+  runHttpChecks({
+    origin: testOrigin,
+    fetchImpl: createFakeFetch(
+      { ...createHealthyRoutes(), ...overrides },
+      calls,
+    ),
+    expectedHeaders: testHeaders,
+    randomId: "test-id",
+  });
+
+const resultNamed = (results: SmokeResult[], name: string) => {
+  const result = results.find((candidate) => candidate.name === name);
+  assert.notEqual(result, undefined, `missing result: ${name}`);
+  return result!;
+};
+
+const failedNames = (results: SmokeResult[]) =>
+  results.filter((result) => !result.ok).map((result) => result.name);
+
+test("a healthy environment passes every HTTP check", async () => {
+  const results = await runAgainst();
+
+  assert.deepEqual(
+    results.map((result) => result.name),
+    [
+      "SPA deep link returns index.html",
+      "Missing assets do not fall back to index.html",
+      "/auth/login redirects to the identity provider",
+      "POST, PATCH and DELETE reach the API",
+      "/api/me is not cached across sessions",
+      "SPA responses carry the security headers",
+      "API responses carry the security headers",
+    ],
+  );
+  assert.deepEqual(failedNames(results), []);
+});
+
+test("a deep link that is not the same index.html fails", async () => {
+  const results = await runAgainst({
+    "GET /projects/example": () =>
+      new Response("<!doctype html><title>Other</title>", {
+        status: 200,
+        headers: { "content-type": "text/html", ...testHeaders },
+      }),
+  });
+
+  assert.deepEqual(failedNames(results), ["SPA deep link returns index.html"]);
+});
+
+test("a missing asset served as index.html fails, and a 404 passes", async () => {
+  const fallback = await runAgainst({
+    "GET /assets/smoke-test-id.js": () =>
+      new Response("<!doctype html><title>Hono Starter Kit</title>", {
+        status: 200,
+        headers: { "content-type": "text/html" },
+      }),
+  });
+  assert.deepEqual(failedNames(fallback), [
+    "Missing assets do not fall back to index.html",
+  ]);
+
+  const notFound = await runAgainst({
+    "GET /smoke-test-id.png": () => new Response("Not Found", { status: 404 }),
+  });
+  assert.deepEqual(failedNames(notFound), []);
+});
+
+test("a login redirect that stays on the application origin fails", async () => {
+  const results = await runAgainst({
+    "GET /auth/login": () =>
+      new Response(null, {
+        status: 303,
+        headers: { location: `${testOrigin}/login` },
+      }),
+  });
+
+  assert.deepEqual(failedNames(results), [
+    "/auth/login redirects to the identity provider",
+  ]);
+});
+
+test("an unsafe method rejected by CloudFront with an HTML page fails without crashing", async () => {
+  const results = await runAgainst({
+    "PATCH /api/projects/smoke": () =>
+      new Response("<html>403 ERROR</html>", {
+        status: 403,
+        headers: { "content-type": "text/html" },
+      }),
+  });
+
+  const result = resultNamed(results, "POST, PATCH and DELETE reach the API");
+  assert.equal(result.ok, false);
+  assert.match(result.detail, /PATCH/u);
+});
+
+test("/api/me answered twice with the same requestId is reported as cached", async () => {
+  const results = await runAgainst({
+    "GET /api/me": () =>
+      problemResponse(401, "UNAUTHENTICATED", "request-cached"),
+  });
+
+  const result = resultNamed(results, "/api/me is not cached across sessions");
+  assert.equal(result.ok, false);
+  assert.match(result.detail, /requestId/u);
+});
+
+test("/api/me served from the CloudFront cache or without no-store fails", async () => {
+  let served = 0;
+  const hit = await runAgainst({
+    "GET /api/me": () => {
+      served += 1;
+      return problemResponse(
+        401,
+        "UNAUTHENTICATED",
+        `request-${String(served)}`,
+        { "x-cache": "Hit from cloudfront" },
+      );
+    },
+  });
+  assert.deepEqual(failedNames(hit), ["/api/me is not cached across sessions"]);
+
+  const cacheable = await runAgainst({
+    "GET /api/me": () => {
+      served += 1;
+      return problemResponse(
+        401,
+        "UNAUTHENTICATED",
+        `request-${String(served)}`,
+        { "cache-control": "private, max-age=60" },
+      );
+    },
+  });
+  assert.deepEqual(failedNames(cacheable), [
+    "/api/me is not cached across sessions",
+  ]);
+});
+
+test("/api/me without a requestId fails instead of crashing", async () => {
+  const results = await runAgainst({
+    "GET /api/me": () =>
+      new Response("<html>401</html>", {
+        status: 401,
+        headers: { "content-type": "text/html", ...testHeaders },
+      }),
+  });
+
+  assert.equal(
+    resultNamed(results, "/api/me is not cached across sessions").ok,
+    false,
+  );
+});
+
+test("a missing security header fails only the check for that response", async () => {
+  const results = await runAgainst({
+    "GET /projects/example": () =>
+      new Response("<!doctype html><title>Hono Starter Kit</title>", {
+        status: 200,
+        headers: {
+          "content-type": "text/html",
+          "strict-transport-security":
+            testHeaders["strict-transport-security"]!,
+        },
+      }),
+  });
+
+  const result = resultNamed(
+    results,
+    "SPA responses carry the security headers",
+  );
+  assert.equal(result.ok, false);
+  assert.match(result.detail, /x-frame-options/u);
+  assert.equal(
+    resultNamed(results, "API responses carry the security headers").ok,
+    true,
+  );
+});
+
+test("a request that fails fails its own check and the others still run", async () => {
+  const results = await runAgainst({
+    "GET /auth/login": () => {
+      throw new Error("connect ETIMEDOUT");
+    },
+  });
+
+  assert.deepEqual(failedNames(results), [
+    "/auth/login redirects to the identity provider",
+  ]);
+  assert.match(
+    resultNamed(results, "/auth/login redirects to the identity provider")
+      .detail,
+    /ETIMEDOUT/u,
+  );
+});
+
+test("requests send Origin on unsafe methods, distinct cookies to /api/me, and never follow redirects", async () => {
+  const calls: RecordedCall[] = [];
+  await runAgainst({}, calls);
+
+  for (const call of calls) {
+    assert.equal(call.init.redirect, "manual");
+    assert.ok(call.init.signal instanceof AbortSignal);
+  }
+  const unsafe = calls.filter((call) =>
+    ["POST", "PATCH", "DELETE"].includes(call.init.method ?? "GET"),
+  );
+  assert.equal(unsafe.length, 3);
+  for (const call of unsafe) {
+    assert.equal(new Headers(call.init.headers).get("origin"), testOrigin);
+  }
+  const cookies = calls
+    .filter((call) => new URL(call.url).pathname === "/api/me")
+    .map((call) => new Headers(call.init.headers).get("cookie"));
+  assert.equal(cookies.length, 2);
+  assert.notEqual(cookies[0], cookies[1]);
 });
