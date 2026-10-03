@@ -264,6 +264,44 @@ test("a missing security header fails only the check for that response", async (
   );
 });
 
+const deepLinkWithHsts = (hsts: string) => ({
+  "GET /projects/example": () =>
+    new Response("<!doctype html><title>Hono Starter Kit</title>", {
+      status: 200,
+      headers: {
+        "content-type": "text/html",
+        "x-frame-options": testHeaders["x-frame-options"]!,
+        "strict-transport-security": hsts,
+      },
+    }),
+});
+
+test("HSTS matches by directive, ignoring order, case and spacing", async () => {
+  for (const hsts of [
+    "max-age=31536000;includeSubDomains",
+    "includeSubDomains; max-age=31536000",
+    "max-age=31536000; INCLUDESUBDOMAINS",
+  ]) {
+    const results = await runAgainst(deepLinkWithHsts(hsts));
+    assert.equal(
+      resultNamed(results, "SPA responses carry the security headers").ok,
+      true,
+      hsts,
+    );
+  }
+});
+
+test("HSTS with a different max-age or a missing directive fails", async () => {
+  for (const hsts of ["max-age=300; includeSubDomains", "max-age=31536000"]) {
+    const results = await runAgainst(deepLinkWithHsts(hsts));
+    assert.equal(
+      resultNamed(results, "SPA responses carry the security headers").ok,
+      false,
+      hsts,
+    );
+  }
+});
+
 test("a request that fails fails its own check and the others still run", async () => {
   const results = await runAgainst({
     "GET /auth/login": () => {

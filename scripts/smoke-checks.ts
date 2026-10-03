@@ -283,6 +283,32 @@ const checkSessionCaching = (pairs: readonly SessionPair[]): SmokeResult => {
   return result("API responses are not cached across sessions", issues);
 };
 
+// HSTS はディレクティブの順番・大文字小文字・区切りの空白に意味がなく、CloudFront が出す正確な
+// 書式は文書に無い。文字列で比べると実物の書式次第で誤って FAIL するので、ディレクティブの集合で比べる。
+const hstsDirectives = (value: string) =>
+  value
+    .split(";")
+    .map((directive) => directive.trim().toLowerCase())
+    .filter((directive) => directive !== "")
+    .sort();
+
+const headerValueMatches = (
+  header: string,
+  actual: string | null,
+  expected: string,
+) => {
+  if (actual === null) return false;
+  if (header !== "strict-transport-security") return actual === expected;
+  const actualDirectives = hstsDirectives(actual);
+  const expectedDirectives = hstsDirectives(expected);
+  return (
+    actualDirectives.length === expectedDirectives.length &&
+    actualDirectives.every(
+      (directive, index) => directive === expectedDirectives[index],
+    )
+  );
+};
+
 const checkSecurityHeaders = (
   name: string,
   sent: Sent,
@@ -292,7 +318,7 @@ const checkSecurityHeaders = (
   const issues = Object.entries(expectedHeaders).flatMap(
     ([header, expected]) => {
       const actual = sent.response.headers.get(header);
-      return actual === expected
+      return headerValueMatches(header, actual, expected)
         ? []
         : [
             `${header}: expected "${expected}", got ${actual === null ? "nothing" : `"${actual}"`}`,
