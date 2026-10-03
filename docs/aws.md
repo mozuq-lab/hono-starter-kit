@@ -178,11 +178,11 @@ pnpm smoke:dev -- --origin <dev の output app_origin> --alb-dns-name <dev の o
 API は stdout へ JSON を 1 行ずつ出し、ECS では CloudWatch Logs に届きます。アクセスログは
 出しません。調べるときは `message` で絞ります。
 
-| `message`                    | `level` | 出る場面                                                                                                                                                  |
-| ---------------------------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `unexpected error`           | `error` | 要求が 500 になった。`requestId` と、トレース有効時は `traceId` が入る                                                                                    |
-| `suppressed error`           | `warn`  | 応答は成功させたが失敗は残した処理。`operation`（例: `auth.session-cleanup`）で処理を見分ける                                                             |
-| `database connection closed` | `warn`  | サーバーが DB 接続を切った（再起動、フェイルオーバーなど）。`sqlState`（`25P03`、`57P01` など）で原因を見分ける。API は落ちず、次の要求は新しい接続で動く |
+| `message`                    | `level` | 出る場面                                                                                                                                                                 |
+| ---------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `unexpected error`           | `error` | 要求が 500 になった。`requestId` と、トレース有効時は `traceId` が入る                                                                                                   |
+| `suppressed error`           | `warn`  | 応答は成功させたが失敗は残した処理。`operation`（例: `auth.session-cleanup`、OIDC の callback の失敗なら `auth.external-login-callback` とその下の理由）で処理を見分ける |
+| `database connection closed` | `warn`  | サーバーが DB 接続を切った（再起動、フェイルオーバーなど）。`sqlState`（`25P03`、`57P01` など）で原因を見分ける。API は落ちず、次の要求は新しい接続で動く                |
 
 各フィールドの中身と、何を出さないかは `docs/design.md` の「13. 可観測性」にあります。
 

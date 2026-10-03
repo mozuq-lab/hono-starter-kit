@@ -536,6 +536,14 @@ request/callback round tripでのみ使います。Callbackでは次をすべて
 - ログイン後の遷移先は検証済みの同一オリジン相対パスに限定し、`/auth`とその配下を除外する
 - 認証成功時に既存Session IDを破棄して新しいIDを発行する
 
+確認に失敗したCallbackは、理由を問わず同じ`/login?error=authentication_failed`への303を返し、
+理由を外へ見せません。運用者向けには`ReportSuppressedError`（§13）でwarnログを1行残し、
+`operation`で理由を見分けます。取引用Cookieが無い・壊れている
+（`auth.external-login-callback.missing-transaction`）、クエリが不正（`.invalid-query`）、
+IdPがエラーを返した（`.provider-error`）、Token交換・ID Tokenの検証・DBで例外が起きた
+（`auth.external-login-callback`、例外の要約付き）の4つです。クエリやCookieの値、IdPが返した
+エラーコードは外から送り込める値なので記録しません。
+
 OIDC login transactionとSessionは別テーブルにし、`state`やSession IDは平文で保存せずhash化します。IdPのAccess TokenやRefresh Tokenが不要なら保存しません。外部Resource Server呼び出しのため保存する場合はKMSで保護した鍵によるenvelope encryption、最小scope、Refresh Token rotationを追加要件とします。([OAuth Security BCP][27])
 
 productionのlogin transaction Cookieは
