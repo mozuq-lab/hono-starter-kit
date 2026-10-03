@@ -3,6 +3,9 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import {
+  checkAlbIsPrivate,
+  createAddressResolver,
+  isPrivateAddress,
   readExpectedSecurityHeaders,
   runHttpChecks,
   type SmokeResult,
@@ -278,4 +281,79 @@ test("requests send Origin on unsafe methods, distinct cookies to /api/me, and n
     .map((call) => new Headers(call.init.headers).get("cookie"));
   assert.equal(cookies.length, 2);
   assert.notEqual(cookies[0], cookies[1]);
+});
+
+test("classifies private and public addresses", () => {
+  for (const address of [
+    "10.0.1.5",
+    "172.16.0.1",
+    "172.31.255.255",
+    "192.168.1.1",
+    "fd12::1",
+    "fc00::1",
+  ]) {
+    assert.equal(isPrivateAddress(address), true, address);
+  }
+  for (const address of [
+    "172.15.0.1",
+    "172.32.0.1",
+    "8.8.8.8",
+    "52.95.1.1",
+    "2001:db8::1",
+    "fe80::1",
+    "not-an-address",
+  ]) {
+    assert.equal(isPrivateAddress(address), false, address);
+  }
+});
+
+const alb = "internal-dev.ap-northeast-1.elb.amazonaws.com";
+
+test("an ALB name that resolves only to private addresses passes", async () => {
+  const check = await checkAlbIsPrivate({
+    albDnsName: alb,
+    resolveAddresses: () => Promise.resolve(["10.0.1.5", "10.0.2.7"]),
+  });
+
+  assert.equal(check.name, "ALB is not reachable from the Internet");
+  assert.equal(check.ok, true);
+});
+
+test("a public address, no address, or a failed lookup fails the ALB check", async () => {
+  const mixed = await checkAlbIsPrivate({
+    albDnsName: alb,
+    resolveAddresses: () => Promise.resolve(["10.0.1.5", "52.95.1.1"]),
+  });
+  assert.equal(mixed.ok, false);
+  assert.match(mixed.detail, /52\.95\.1\.1/u);
+
+  const empty = await checkAlbIsPrivate({
+    albDnsName: alb,
+    resolveAddresses: () => Promise.resolve([]),
+  });
+  assert.equal(empty.ok, false);
+
+  const failed = await checkAlbIsPrivate({
+    albDnsName: alb,
+    resolveAddresses: () => Promise.reject(new Error("queryA ESERVFAIL")),
+  });
+  assert.equal(failed.ok, false);
+  assert.match(failed.detail, /ESERVFAIL/u);
+});
+
+const dnsError = (code: string) =>
+  Object.assign(new Error(`query ${code}`), { code });
+
+test("a missing record family counts as no addresses, but other DNS errors propagate", async () => {
+  const ipv4Only = createAddressResolver({
+    resolve4: () => Promise.resolve(["10.0.1.5"]),
+    resolve6: () => Promise.reject(dnsError("ENODATA")),
+  });
+  assert.deepEqual(await ipv4Only(alb), ["10.0.1.5"]);
+
+  const broken = createAddressResolver({
+    resolve4: () => Promise.reject(dnsError("ESERVFAIL")),
+    resolve6: () => Promise.resolve([]),
+  });
+  await assert.rejects(broken(alb), /ESERVFAIL/u);
 });

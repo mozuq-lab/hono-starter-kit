@@ -1,4 +1,6 @@
+import { resolve4, resolve6 } from "node:dns/promises";
 import { readFile } from "node:fs/promises";
+import { isIPv4, isIPv6 } from "node:net";
 
 // pnpm smoke:dev の検査本体。デプロイ済みの dev 環境で、ローカルの Vite プロキシでは見つからない
 // CloudFront・ALB・キャッシュポリシーの食い違いを、HTTP と DNS だけで確かめる。
@@ -350,4 +352,86 @@ export const runHttpChecks = async ({
       expectedHeaders,
     ),
   ];
+};
+
+export type ResolveAddresses = (hostname: string) => Promise<string[]>;
+
+// RFC 1918 と IPv6 の ULA（fc00::/7）。ALB の DNS 名がこれだけに解決されれば、internal で
+// インターネットからは届かない。手元から TCP で試すと、手元の LAN に同じアドレスの機械が
+// あるときに誤って届いてしまうので、アドレスの種類だけで判定する。
+export const isPrivateAddress = (address: string): boolean => {
+  if (isIPv4(address)) {
+    const [first = 0, second = 0] = address.split(".").map(Number);
+    return (
+      first === 10 ||
+      (first === 172 && second >= 16 && second <= 31) ||
+      (first === 192 && second === 168)
+    );
+  }
+  if (isIPv6(address)) {
+    const leading = Number.parseInt(address.split(":")[0] || "0", 16);
+    return (leading & 0xfe00) === 0xfc00;
+  }
+  return false;
+};
+
+// AAAA が無い（ENODATA）のは IPv6 を使っていないだけなので、その族を 0 件として扱う。
+const absentRecordCodes = new Set(["ENODATA", "ENOTFOUND"]);
+
+const resolveFamily = async (
+  resolve: (hostname: string) => Promise<string[]>,
+  hostname: string,
+) => {
+  try {
+    return await resolve(hostname);
+  } catch (error) {
+    if (absentRecordCodes.has((error as NodeJS.ErrnoException).code ?? "")) {
+      return [];
+    }
+    throw error;
+  }
+};
+
+export const createAddressResolver =
+  (resolvers: {
+    resolve4: (hostname: string) => Promise<string[]>;
+    resolve6: (hostname: string) => Promise<string[]>;
+  }): ResolveAddresses =>
+  async (hostname) => [
+    ...(await resolveFamily(resolvers.resolve4, hostname)),
+    ...(await resolveFamily(resolvers.resolve6, hostname)),
+  ];
+
+export const resolveAllAddresses: ResolveAddresses = createAddressResolver({
+  resolve4: (hostname) => resolve4(hostname),
+  resolve6: (hostname) => resolve6(hostname),
+});
+
+export const checkAlbIsPrivate = async ({
+  albDnsName,
+  resolveAddresses,
+}: {
+  albDnsName: string;
+  resolveAddresses: ResolveAddresses;
+}): Promise<SmokeResult> => {
+  const name = "ALB is not reachable from the Internet";
+  let addresses: string[];
+  try {
+    addresses = await resolveAddresses(albDnsName);
+  } catch (error) {
+    return result(name, [
+      `DNS lookup failed: ${error instanceof Error ? error.message : String(error)}`,
+    ]);
+  }
+  if (addresses.length === 0) {
+    return result(name, ["the name has no A or AAAA record"]);
+  }
+  const publicAddresses = addresses.filter(
+    (address) => !isPrivateAddress(address),
+  );
+  return publicAddresses.length === 0
+    ? { name, ok: true, detail: `resolves only to ${addresses.join(", ")}` }
+    : result(name, [
+        `resolves to public addresses: ${publicAddresses.join(", ")}`,
+      ]);
 };
