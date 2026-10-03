@@ -403,6 +403,7 @@ export async function clientLoader({ params }: ClientLoaderFunctionArgs) {
 - Form submitting
 - Optimistic update failure
 - Session expired
+- Sign-in failure（OIDCのCallbackが失敗して`/login?error=authentication_failed`に戻ったとき）
 
 単なるCRUD画面だけでなく、実際の運用で必要になる失敗状態もサンプルに含めます。Forbidden、Maintenance、Network offline、Partial data failureの状態はまだありません。計画は`docs/roadmap.md`の「画面の追加の状態」にあります。
 

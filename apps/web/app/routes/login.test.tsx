@@ -26,6 +26,21 @@ const renderLogin = async (returnTo: string) => {
   return screen.findByRole("link", { name: "Sign in" });
 };
 
+const renderLoginAt = async (entry: string) => {
+  const router = createMemoryRouter(
+    [
+      {
+        path: "/login",
+        loader: ({ request }) => clientLoader({ request } as never),
+        Component: LoginRoute,
+      },
+    ],
+    { initialEntries: [entry] },
+  );
+  render(<RouterProvider router={router} />);
+  await screen.findByRole("link", { name: "Sign in" });
+};
+
 describe("login route", () => {
   it("renders a same-origin login anchor with the valid return path encoded once", async () => {
     const link = await renderLogin(
@@ -71,5 +86,23 @@ describe("login route", () => {
     expect(
       await screen.findByRole("link", { name: "Sign in" }),
     ).toHaveAttribute("href", "/auth/login");
+  });
+
+  it("tells the user that the previous sign-in failed", async () => {
+    await renderLoginAt("/login?error=authentication_failed");
+
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Sign-in could not be completed. Please try again.",
+    );
+  });
+
+  it("shows no alert on a normal visit or for an unknown error value", async () => {
+    await renderLoginAt("/login?returnTo=%2Fprojects");
+    expect(screen.queryByRole("alert")).toBeNull();
+    cleanup();
+
+    await renderLoginAt("/login?error=%3Cscript%3Eunknown");
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(document.body.textContent).not.toContain("unknown");
   });
 });
