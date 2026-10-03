@@ -5,6 +5,7 @@ import { HttpInstrumentation } from "@opentelemetry/instrumentation-http";
 import { PgInstrumentation } from "@opentelemetry/instrumentation-pg";
 import { NodeSDK } from "@opentelemetry/sdk-node";
 import { createHttpInstrumentationConfig } from "./http-instrumentation-config.js";
+import { createSpanProcessors } from "./span-processors.js";
 import type { TelemetryConfig } from "./telemetry-config.js";
 
 type TelemetrySdk = {
@@ -25,13 +26,16 @@ const defaultDependencies: TelemetryDependencies = {
   createSdk: (config) =>
     new NodeSDK({
       serviceName: config.serviceName,
-      traceExporter: new OTLPTraceExporter({ url: config.tracesUrl }),
+      spanProcessors: createSpanProcessors(
+        new OTLPTraceExporter({ url: config.tracesUrl }),
+      ),
       logRecordProcessors: [],
       metricReaders: [],
       textMapPropagator: new W3CTraceContextPropagator(),
       // どちらの計装も既定のままだと機密を載せる。HTTP は受信クエリを url.query に
       // そのまま入れる（OIDC コールバックの認可コードが該当）ので設定で伏せ、
-      // pg は enhancedDatabaseReporting を切ってバインド値を落とす。
+      // pg は enhancedDatabaseReporting を切ってバインド値を落とし、失敗時の status の
+      // message は createSpanProcessors が落とす。
       instrumentations: [
         new HttpInstrumentation(createHttpInstrumentationConfig()),
         new PgInstrumentation({ enhancedDatabaseReporting: false }),
