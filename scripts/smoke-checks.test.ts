@@ -281,6 +281,25 @@ test("a request that fails fails its own check and the others still run", async 
   );
 });
 
+test("a connection failure reports the underlying cause, not only 'fetch failed'", async () => {
+  const results = await runAgainst({
+    "GET /auth/login": () => {
+      throw new TypeError("fetch failed", {
+        cause: Object.assign(
+          new Error("getaddrinfo ENOTFOUND d111111abcdef8.cloudfront.net"),
+          { code: "ENOTFOUND" },
+        ),
+      });
+    },
+  });
+
+  assert.match(
+    resultNamed(results, "/auth/login redirects to the identity provider")
+      .detail,
+    /fetch failed \(ENOTFOUND\)/u,
+  );
+});
+
 test("requests send Origin on unsafe methods, distinct cookies to /api/me, and never follow redirects", async () => {
   const calls: RecordedCall[] = [];
   await runAgainst({}, calls);

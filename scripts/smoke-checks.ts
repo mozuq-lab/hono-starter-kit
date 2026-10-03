@@ -88,6 +88,16 @@ const requestTimeoutMs = 10_000;
 type Sent =
   { ok: true; response: Response; body: string } | { ok: false; error: string };
 
+// Node の fetch は接続の失敗を "fetch failed" とだけ言い、本当の理由（ENOTFOUND、証明書の誤り、
+// 接続拒否）を cause に入れる。初回の実行で起きやすいこれらを見分けられるよう、cause の code を添える。
+const describeFailure = (error: unknown): string => {
+  if (!(error instanceof Error)) return String(error);
+  const cause: unknown = error.cause;
+  if (!(cause instanceof Error)) return error.message;
+  const code = (cause as NodeJS.ErrnoException).code;
+  return `${error.message} (${typeof code === "string" ? code : cause.message})`;
+};
+
 const send = async (
   fetchImpl: SmokeFetch,
   url: string,
@@ -101,10 +111,7 @@ const send = async (
     });
     return { ok: true, response, body: await response.text() };
   } catch (error) {
-    return {
-      ok: false,
-      error: error instanceof Error ? error.message : String(error),
-    };
+    return { ok: false, error: describeFailure(error) };
   }
 };
 
