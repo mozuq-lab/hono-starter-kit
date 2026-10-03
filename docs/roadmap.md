@@ -34,7 +34,7 @@
 
 ## 画面の追加の状態
 
-- 何を: 今ある状態（Loading、Empty、Error、Not Found、Form submitting、Optimistic update failure、Session expired）に、次の状態を足す。
+- 何を: 今ある状態（Loading、Empty、Error、Not Found、Form submitting、Optimistic update failure、Session expired、Sign-in failure）に、次の状態を足す。
   - Forbidden（RBAC の `FORBIDDEN` を受けたとき）
   - Maintenance
   - Network offline
