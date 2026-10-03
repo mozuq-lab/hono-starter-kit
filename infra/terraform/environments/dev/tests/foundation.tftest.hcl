@@ -223,6 +223,11 @@ run "default_dev_foundation_contract" {
   }
 
   assert {
+    condition     = output.alb_dns_name == "internal-dev.ap-northeast-1.elb.amazonaws.com"
+    error_message = "The smoke test must receive the internal ALB DNS name to confirm that it resolves only to private addresses."
+  }
+
+  assert {
     condition = (
       output.oidc_issuer == "https://cognito-idp.ap-northeast-1.amazonaws.com/ap-northeast-1_example" &&
       output.oidc_client_id == "oidc-client-dev" &&

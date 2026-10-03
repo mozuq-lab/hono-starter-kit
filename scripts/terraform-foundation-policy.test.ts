@@ -1157,6 +1157,7 @@ test("the dev root exposes only the native-lock S3 and delivery-slice contracts"
   assert.match(devSource, /use_lockfile\s*=\s*true/u);
   assert.deepEqual(outputNames.sort(), [
     "adot_log_group_name",
+    "alb_dns_name",
     "api_log_group_name",
     "app_origin",
     "cluster_arn",
