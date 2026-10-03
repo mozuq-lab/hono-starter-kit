@@ -255,11 +255,14 @@ describe("external login routes", () => {
       { headers: { Cookie: login.cookie } },
     );
 
+    expect(response.headers.get("location")).toBe(
+      "/login?error=authentication_failed&returnTo=%2Fprojects",
+    );
+    expect(replay.headers.get("location")).toBe(
+      "/login?error=authentication_failed",
+    );
     for (const candidate of [response, replay]) {
       expect(candidate.status).toBe(303);
-      expect(candidate.headers.get("location")).toBe(
-        "/login?error=authentication_failed",
-      );
       expect(await candidate.text()).not.toContain("access_denied");
       expectTransactionCookieCleared(candidate);
     }
@@ -282,7 +285,7 @@ describe("external login routes", () => {
     );
 
     expect(response.headers.get("location")).toBe(
-      "/login?error=authentication_failed",
+      "/login?error=authentication_failed&returnTo=%2Fprojects",
     );
     expect(replay.headers.get("location")).toBe(
       "/login?error=authentication_failed",
@@ -311,7 +314,7 @@ describe("external login routes", () => {
     );
 
     expect(first.headers.get("location")).toBe(
-      "/login?error=authentication_failed",
+      "/login?error=authentication_failed&returnTo=%2Fprojects",
     );
     expect(replay.headers.get("location")).toBe(
       "/login?error=authentication_failed",
@@ -387,7 +390,7 @@ describe("external login routes", () => {
     expect(fixture.reported).toEqual([]);
   });
 
-  it("records an unexpected callback failure without changing the response", async () => {
+  it("records the stage of a failed exchange and returns to the stored path", async () => {
     const fixture = createRouteFixture();
     const login = await fixture.begin();
 
@@ -397,11 +400,53 @@ describe("external login routes", () => {
     );
 
     expect(response.headers.get("location")).toBe(
-      "/login?error=authentication_failed",
+      "/login?error=authentication_failed&returnTo=%2Fprojects",
     );
     expect(fixture.reported).toHaveLength(1);
-    expect(fixture.reported[0]!.operation).toBe("auth.external-login-callback");
+    expect(fixture.reported[0]!.operation).toBe(
+      "auth.external-login-callback.provider",
+    );
     expect(fixture.reported[0]!.error).toBeInstanceOf(Error);
+  });
+
+  it("records a replayed callback as the transaction stage without a return path", async () => {
+    const fixture = createRouteFixture();
+    const login = await fixture.begin("/projects/project_alpha");
+    await fixture.routes.request(
+      `/callback?state=${state}&code=authorization-code`,
+      { headers: { Cookie: login.cookie } },
+    );
+
+    const replay = await fixture.routes.request(
+      `/callback?state=${state}&code=authorization-code`,
+      { headers: { Cookie: login.cookie } },
+    );
+
+    expect(replay.headers.get("location")).toBe(
+      "/login?error=authentication_failed",
+    );
+    expect(fixture.reported.map((event) => event.operation)).toEqual([
+      "auth.external-login-callback.transaction",
+    ]);
+  });
+
+  it("records a failed session establishment and keeps the stored return path", async () => {
+    const fixture = createRouteFixture({
+      establishSession: () => Promise.reject(new Error("db down")),
+    });
+    const login = await fixture.begin("/projects/project_alpha");
+
+    const response = await fixture.routes.request(
+      `/callback?state=${state}&code=authorization-code`,
+      { headers: { Cookie: login.cookie } },
+    );
+
+    expect(response.headers.get("location")).toBe(
+      "/login?error=authentication_failed&returnTo=%2Fprojects%2Fproject_alpha",
+    );
+    expect(fixture.reported.map((event) => event.operation)).toEqual([
+      "auth.external-login-callback",
+    ]);
   });
 
   it("records a callback that arrives without its transaction cookie", async () => {
@@ -458,7 +503,7 @@ describe("external login routes", () => {
     );
 
     expect(response.headers.get("location")).toBe(
-      "/login?error=authentication_failed",
+      "/login?error=authentication_failed&returnTo=%2Fprojects",
     );
     expect(fixture.reported).toHaveLength(1);
     expect(fixture.reported[0]!.operation).toBe(

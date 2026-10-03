@@ -5,7 +5,10 @@ import {
   type ReportSuppressedError,
 } from "../errors/report-suppressed-error.js";
 import type { BeginExternalLogin } from "./begin-external-login.js";
-import type { CompleteExternalLogin } from "./complete-external-login.js";
+import {
+  ExternalLoginFailedError,
+  type CompleteExternalLogin,
+} from "./complete-external-login.js";
 import type { EstablishSession } from "./establish-session.js";
 import {
   clearExternalLoginCookie,
@@ -23,8 +26,15 @@ export type { ExternalLoginCookieConfig } from "./external-login-cookie.js";
 
 const failureDestination = "/login?error=authentication_failed";
 
-const fail = (context: Context<AppEnv>) =>
-  context.redirect(failureDestination, 303);
+// 取引を取り出せた後の失敗では、開始時に検証して保存した戻り先を渡し、もう一度サインインした
+// 利用者を元の画面へ戻す。login 画面はこれを /auth/login に渡し、サーバーがもう一度検証する。
+const fail = (context: Context<AppEnv>, returnTo?: string) =>
+  context.redirect(
+    returnTo === undefined
+      ? failureDestination
+      : `${failureDestination}&returnTo=${encodeURIComponent(returnTo)}`,
+    303,
+  );
 
 // 例外ではない拒否も記録に載せるための印。理由は operation で区別し、クエリや Cookie の値、
 // IdP が返したエラーコードは持たせない（どれも外から送り込める値）。
@@ -56,12 +66,16 @@ export const createExternalLoginRoutes = ({
   transactionCookie: ExternalLoginCookieConfig;
 }) => {
   const routes = new Hono<AppEnv>();
-  const reject = (context: Context<AppEnv>, reason: string) => {
+  const reject = (
+    context: Context<AppEnv>,
+    reason: string,
+    returnTo?: string,
+  ) => {
     reportSuppressedError({
       operation: `${callbackOperation}.${reason}`,
       error: new ExternalLoginCallbackRejected(reason),
     });
-    return fail(context);
+    return fail(context, returnTo);
   };
 
   return routes
@@ -100,6 +114,7 @@ export const createExternalLoginRoutes = ({
         return reject(context, "invalid-query");
       }
 
+      let returnTo: string | undefined;
       try {
         const completed = await completeExternalLogin({
           callbackUrl,
@@ -107,7 +122,8 @@ export const createExternalLoginRoutes = ({
           nonce: cookie.nonce,
           verifier: cookie.verifier,
         });
-        if (hasError) return reject(context, "provider-error");
+        returnTo = completed.returnTo;
+        if (hasError) return reject(context, "provider-error", returnTo);
         const previousSessionId = getSessionCookie(context, sessionCookie);
         const { sessionId } = await establishSession({
           identity: completed.identity,
@@ -116,8 +132,16 @@ export const createExternalLoginRoutes = ({
         setSessionCookie(context, sessionCookie, sessionId);
         return context.redirect(completed.returnTo, 303);
       } catch (error) {
+        // 段階（DB・取引・IdP）は use case が閉じた値で持つ。生のエラーは use case の外へ出ない。
+        if (error instanceof ExternalLoginFailedError) {
+          reportSuppressedError({
+            operation: `${callbackOperation}.${error.stage}`,
+            error,
+          });
+          return fail(context, error.returnTo);
+        }
         reportSuppressedError({ operation: callbackOperation, error });
-        return fail(context);
+        return fail(context, returnTo);
       }
     })
     .get("/provider-logout", (context) => {
