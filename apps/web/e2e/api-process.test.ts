@@ -5,6 +5,7 @@ import {
   type HealthProbe,
   createApiSpawnOptions,
   createStop,
+  isProcessGroupAlive,
   registerGroupExitGuard,
   resolveApiPort,
   signalProcessGroup,
@@ -145,6 +146,33 @@ describe("signalProcessGroup", () => {
   });
 });
 
+describe("isProcessGroupAlive", () => {
+  it("probes the whole group with signal 0", () => {
+    const probe = vi.fn();
+
+    expect(isProcessGroupAlive(4321, probe)).toBe(true);
+    expect(probe).toHaveBeenCalledWith(-4321, 0);
+  });
+
+  it("reports a group that no longer exists", () => {
+    const probe = vi.fn(() => {
+      throw Object.assign(new Error("no such process"), { code: "ESRCH" });
+    });
+
+    expect(isProcessGroupAlive(4321, probe)).toBe(false);
+  });
+
+  it("treats a group it may not signal as still alive", () => {
+    const probe = vi.fn(() => {
+      throw Object.assign(new Error("operation not permitted"), {
+        code: "EPERM",
+      });
+    });
+
+    expect(isProcessGroupAlive(4321, probe)).toBe(true);
+  });
+});
+
 describe("registerGroupExitGuard", () => {
   const createExitTarget = () => {
     const listeners = new Set<() => void>();
@@ -202,7 +230,12 @@ describe("createStop", () => {
       { kill: vi.fn(), pid: 4321 },
       exited,
       () => !running,
-      { sendSignal, stopTimeoutMs: 50, waitForPortRelease },
+      {
+        isGroupAlive: () => false,
+        sendSignal,
+        stopTimeoutMs: 50,
+        waitForPortRelease,
+      },
     );
     await stop();
 
@@ -225,6 +258,7 @@ describe("createStop", () => {
       exited,
       () => !running,
       {
+        isGroupAlive: () => false,
         sendSignal,
         stopTimeoutMs: 10,
         waitForPortRelease: () => Promise.resolve(),
@@ -251,6 +285,7 @@ describe("createStop", () => {
     });
 
     const stop = createStop({ kill, pid: 4321 }, exited, () => !running, {
+      isGroupAlive: () => false,
       sendSignal,
       stopTimeoutMs: 50,
       waitForPortRelease: () => Promise.resolve(),
@@ -273,12 +308,90 @@ describe("createStop", () => {
       { kill: vi.fn(), pid: 4321 },
       exited,
       () => !running,
-      { sendSignal, stopTimeoutMs: 50, waitForPortRelease },
+      {
+        isGroupAlive: () => false,
+        sendSignal,
+        stopTimeoutMs: 50,
+        waitForPortRelease,
+      },
     );
     await Promise.all([stop(), stop()]);
 
     expect(sendSignal).toHaveBeenCalledTimes(1);
     expect(waitForPortRelease).toHaveBeenCalledTimes(1);
+  });
+
+  it("waits for the rest of the process group after the direct child exits", async () => {
+    // 直接の子（pnpm）が先に終わっても、孫の tsx と API は終了処理の途中で生きていることがある。
+    let groupPolls = 0;
+    const events: string[] = [];
+    const stop = createStop(
+      { kill: vi.fn(), pid: 4321 },
+      Promise.resolve(),
+      () => true,
+      {
+        isGroupAlive: () => {
+          groupPolls += 1;
+          return groupPolls < 3;
+        },
+        sendSignal: vi.fn(),
+        stopTimeoutMs: 1_000,
+        waitForPortRelease: () => {
+          events.push(`port checked after ${String(groupPolls)} polls`);
+          return Promise.resolve();
+        },
+      },
+    );
+    await stop();
+
+    expect(events).toEqual(["port checked after 3 polls"]);
+  });
+
+  it("kills the remaining process group when it outlives the stop timeout", async () => {
+    let groupAlive = true;
+    const sendSignal = vi.fn((_pid: number, signal: NodeJS.Signals) => {
+      if (signal === "SIGKILL") groupAlive = false;
+    });
+
+    const stop = createStop(
+      { kill: vi.fn(), pid: 4321 },
+      Promise.resolve(),
+      () => true,
+      {
+        isGroupAlive: () => groupAlive,
+        sendSignal,
+        stopTimeoutMs: 20,
+        waitForPortRelease: () => Promise.resolve(),
+      },
+    );
+    await stop();
+
+    expect(sendSignal.mock.calls).toEqual([[-4321, "SIGKILL"]]);
+  });
+
+  it("kills the remaining group after a short grace instead of the full stop timeout", async () => {
+    let groupAlive = true;
+    const sendSignal = vi.fn((_pid: number, signal: NodeJS.Signals) => {
+      if (signal === "SIGKILL") groupAlive = false;
+    });
+    const startedAt = Date.now();
+
+    const stop = createStop(
+      { kill: vi.fn(), pid: 4321 },
+      Promise.resolve(),
+      () => true,
+      {
+        groupExitGraceMs: 20,
+        isGroupAlive: () => groupAlive,
+        sendSignal,
+        stopTimeoutMs: 10_000,
+        waitForPortRelease: () => Promise.resolve(),
+      },
+    );
+    await stop();
+
+    expect(sendSignal.mock.calls).toEqual([[-4321, "SIGKILL"]]);
+    expect(Date.now() - startedAt).toBeLessThan(1_000);
   });
 
   it("still confirms the port release when the API already exited", async () => {
@@ -289,7 +402,12 @@ describe("createStop", () => {
       { kill: vi.fn(), pid: 4321 },
       Promise.resolve(),
       () => true,
-      { sendSignal, stopTimeoutMs: 50, waitForPortRelease },
+      {
+        isGroupAlive: () => false,
+        sendSignal,
+        stopTimeoutMs: 50,
+        waitForPortRelease,
+      },
     );
     await stop();
 
