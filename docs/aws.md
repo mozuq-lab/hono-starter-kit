@@ -46,6 +46,17 @@ provider mock test を8 rootに対して実行します。`terraform:check` は�
 dev root の plan で module 間の依存が保たれているかの検査を実行します。整形を実際に反映する
 場合は `pnpm terraform -- --root dev fmt -recursive` のように標準コマンドを使います。
 
+### provider を更新したとき
+
+`.terraform.lock.hcl` には、Terraform を動かす Linux の両アーキテクチャのハッシュを記録します。
+`init` が書き足すのは実行した環境のハッシュだけなので、Apple Silicon で更新すると linux_arm64 しか
+残らず、amd64 の CI が `-lockfile=readonly` で初期化したあとの `validate` で落ちます。provider の version を変えたら、
+8 つの root それぞれで次を実行してください。
+
+```sh
+pnpm terraform -- --root dev providers lock -platform=linux_amd64 -platform=linux_arm64
+```
+
 ## 環境を作る・更新する
 
 ### 1. 設定ファイルを用意する
