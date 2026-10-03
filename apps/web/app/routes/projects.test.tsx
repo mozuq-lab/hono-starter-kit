@@ -62,6 +62,23 @@ const renderProjectsRoute = () => {
   return router;
 };
 
+// 見出しが出た時点では、useQuery の購読（passive effect）がまだ済んでいないことがある。
+// 購読前に背景の再取得が失敗するとクエリが invalidated になり、遅れて購読した observer が
+// マウント時の再取得でもう一度 listProjects を呼ぶ。再取得を起こすテストは購読を待ってから始める。
+const renderProjectsRouteWithCachedList = async () => {
+  queryClient.setQueryData(projectsListKey, { items: [project] });
+  renderProjectsRoute();
+  await screen.findByRole("heading", { name: "Alpha" });
+  await waitFor(() => {
+    expect(
+      queryClient
+        .getQueryCache()
+        .find({ queryKey: projectsListKey })
+        ?.getObserversCount(),
+    ).toBe(1);
+  });
+};
+
 beforeEach(() => {
   vi.clearAllMocks();
   queryClient.clear();
@@ -114,11 +131,7 @@ describe("ProjectsRoute ErrorBoundary", () => {
 
 describe("ProjectsRoute background refetch failures", () => {
   it("keeps the cached list visible and reports the stale data instead of failing the screen", async () => {
-    queryClient.setQueryData(projectsListKey, { items: [project] });
-    renderProjectsRoute();
-    expect(
-      await screen.findByRole("heading", { name: "Alpha" }),
-    ).toBeInTheDocument();
+    await renderProjectsRouteWithCachedList();
 
     listProjects.mockRejectedValue(internalError);
     await queryClient
@@ -135,8 +148,7 @@ describe("ProjectsRoute background refetch failures", () => {
 
   it("clears the stale data notice once a retry succeeds", async () => {
     const user = userEvent.setup();
-    queryClient.setQueryData(projectsListKey, { items: [project] });
-    renderProjectsRoute();
+    await renderProjectsRouteWithCachedList();
     listProjects.mockRejectedValue(internalError);
     await queryClient
       .refetchQueries({ queryKey: projectsListKey })
@@ -161,9 +173,7 @@ describe("ProjectsRoute background refetch retry", () => {
   });
 
   it("retries a background refetch once after a network failure", async () => {
-    queryClient.setQueryData(projectsListKey, { items: [project] });
-    renderProjectsRoute();
-    await screen.findByRole("heading", { name: "Alpha" });
+    await renderProjectsRouteWithCachedList();
 
     const renamed = { ...project, name: "Alpha Renamed", version: 2 };
     listProjects
@@ -179,9 +189,7 @@ describe("ProjectsRoute background refetch retry", () => {
   });
 
   it("does not retry a Problem response", async () => {
-    queryClient.setQueryData(projectsListKey, { items: [project] });
-    renderProjectsRoute();
-    await screen.findByRole("heading", { name: "Alpha" });
+    await renderProjectsRouteWithCachedList();
 
     listProjects.mockRejectedValue(internalError);
     await queryClient
@@ -193,9 +201,7 @@ describe("ProjectsRoute background refetch retry", () => {
   });
 
   it("gives up after one retry of a persistent network failure", async () => {
-    queryClient.setQueryData(projectsListKey, { items: [project] });
-    renderProjectsRoute();
-    await screen.findByRole("heading", { name: "Alpha" });
+    await renderProjectsRouteWithCachedList();
 
     listProjects.mockRejectedValue(new TypeError("Failed to fetch"));
     await queryClient
@@ -212,11 +218,7 @@ describe("ProjectsRoute session expiry", () => {
     const assign = vi
       .spyOn(sessionNavigation, "assign")
       .mockImplementation(() => undefined);
-    queryClient.setQueryData(projectsListKey, { items: [project] });
-    renderProjectsRoute();
-    expect(
-      await screen.findByRole("heading", { name: "Alpha" }),
-    ).toBeInTheDocument();
+    await renderProjectsRouteWithCachedList();
 
     listProjects.mockRejectedValue(unauthenticated);
     await queryClient
