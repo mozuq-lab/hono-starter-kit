@@ -89,7 +89,7 @@ pnpm dev
 - 実 AWS での環境の作成・更新・削除と、`release:api` / `release:web` の実行（ローカルの
   受け入れ検証は空の AWS ディレクトリーと provider mock を使い、実 AWS のアカウント照合や
   サービスの挙動は証明しない）
-- デプロイした環境とプロバイダーに対するスモークテスト
+- `pnpm smoke:dev`（デプロイした環境の smoke test）の実環境での実行と、ログインを伴うプロバイダーとの結合
 - 実際の IdP（Entra ID、Cognito など）に対するコンフィデンシャルクライアントとしての動作
 - 本番の送信先（ADOT 経由の X-Ray）で、500 の `exception` イベントが例外として表示されるか
 

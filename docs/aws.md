@@ -150,6 +150,16 @@ dev の `terraform.tfvars` の `api_image` に書くので、続けて `apply` �
 配信中の commit を示す `release.json` の順に web bucket へ置きます。`--distribution-id` を
 渡したときだけ `/index.html` の CloudFront Invalidation を行います。
 
+## デプロイを確かめる
+
+`release:web` まで終えたら、smoke test で CloudFront・ALB・キャッシュポリシーの設定を確かめます。秘密情報は使いません。
+
+```sh
+pnpm smoke:dev -- --origin <dev の output app_origin> --alb-dns-name <dev の output alb_dns_name>
+```
+
+項目ごとに PASS / FAIL を表示し、1 つでも FAIL なら終了コード 1 で終わります。検査の項目と、検査しないものは `docs/design.md` の「Deployed Smoke Test」にあります。
+
 ## マイグレーションが失敗したとき
 
 マイグレーションは ECS タスクが起動するたびに sidecar として走ります。失敗すると migration
