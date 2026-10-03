@@ -1,6 +1,8 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { createServer, type AddressInfo, type Socket } from "node:net";
+import { describe, expect, it, vi } from "vitest";
 import {
   DEFAULT_API_PORT,
+  type HealthProbe,
   createApiSpawnOptions,
   createStop,
   registerGroupExitGuard,
@@ -8,10 +10,6 @@ import {
   signalProcessGroup,
   waitForApiReady,
 } from "./api-process.js";
-
-afterEach(() => {
-  vi.unstubAllGlobals();
-});
 
 const readyProbe = {
   childExited: () => false,
@@ -23,32 +21,59 @@ const readyProbe = {
 
 describe("waitForApiReady", () => {
   it("waits through an unhealthy health response until HTTP 200", async () => {
-    const fetch = vi
-      .fn()
-      .mockResolvedValueOnce(new Response(null, { status: 500 }))
-      .mockResolvedValueOnce(new Response(null, { status: 200 }));
-    vi.stubGlobal("fetch", fetch);
+    const probe = vi
+      .fn<HealthProbe>()
+      .mockResolvedValueOnce(500)
+      .mockResolvedValueOnce(200);
 
-    await waitForApiReady(readyProbe);
+    await waitForApiReady({ ...readyProbe, probe });
 
-    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(probe).toHaveBeenCalledTimes(2);
   });
 
   it("probes the health endpoint of the resolved port", async () => {
-    const fetch = vi
-      .fn()
-      .mockResolvedValue(new Response(null, { status: 200 }));
-    vi.stubGlobal("fetch", fetch);
+    const probe = vi.fn<HealthProbe>().mockResolvedValue(200);
 
     await waitForApiReady({
       ...readyProbe,
       url: "http://127.0.0.1:4321/healthz",
+      probe,
     });
 
-    expect(fetch).toHaveBeenCalledWith(
+    expect(probe).toHaveBeenCalledWith(
       "http://127.0.0.1:4321/healthz",
-      expect.anything(),
+      expect.any(Number),
     );
+  });
+
+  it("ignores a kept-alive connection to an API that has stopped listening", async () => {
+    // 停止中の API は listener を閉じたあとも、終了するまで既存の接続には応答する。
+    // 前のテストで張った接続を使い回すと、まだ起動していない次の API を ready と誤認する。
+    const sockets = new Set<Socket>();
+    const stoppedApi = createServer((socket) => {
+      sockets.add(socket);
+      socket.on("data", () => {
+        socket.write(
+          "HTTP/1.1 200 OK\r\nContent-Length: 0\r\nKeep-Alive: timeout=30\r\n\r\n",
+        );
+      });
+    });
+    await new Promise<void>((resolve) => {
+      stoppedApi.listen(0, "127.0.0.1", resolve);
+    });
+    const { port } = stoppedApi.address() as AddressInfo;
+    const url = `http://127.0.0.1:${String(port)}/healthz`;
+
+    try {
+      await (await fetch(url)).arrayBuffer();
+      stoppedApi.close();
+
+      await expect(
+        waitForApiReady({ ...readyProbe, url, timeoutMs: 300 }),
+      ).rejects.toThrow(/did not become ready within 300 ms/u);
+    } finally {
+      for (const socket of sockets) socket.destroy();
+    }
   });
 });
 
