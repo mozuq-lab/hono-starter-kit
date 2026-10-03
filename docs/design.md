@@ -918,9 +918,10 @@ stackを無条件に載せるので使いません。本番の送信先（ADOT�
 たどれます。
 
 この要約が掛かるのは、api-nodeが書くログとSERVER spanだけです。`PgInstrumentation`が作る
-CLIENT spanは、クエリや接続が失敗するとspanのstatusのmessageにドライバの`message`をそのまま
-載せます（`exception`イベントのほうは型名とSQLSTATEだけに伏せられます）。接続先を含み得る
-既知の制約で、今は手当てしていません。
+CLIENT spanは、クエリや接続が失敗するとspanのstatusのmessageにドライバの`message`（接続先や
+入力値を含み得る）を入れるので、`apps/api-node/src/span-processors.ts`がexporterより前で
+このmessageを落とします。原因は、ライブラリが付ける`error.type`属性（SQLSTATEや
+`ECONNREFUSED`）と、型名とSQLSTATEだけに伏せられた`exception`イベントでたどれます。
 
 応答は成功させるが失敗は残したい処理は、backendの`ReportSuppressedError` portを依存に
 受け取ります。api-nodeの`createSuppressedErrorReporter`が同じ要約を`"level": "warn"`、
