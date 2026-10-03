@@ -124,7 +124,11 @@ hono-starter-kit/
 │       └── environments/dev/
 ├── scripts/                   検証とTerraform実行のTypeScript
 ├── docs/
+│   ├── aws.md
+│   ├── configuration.md
 │   ├── design.md
+│   ├── development.md
+│   ├── forking.md
 │   └── roadmap.md
 ├── .github/workflows/
 ├── compose.yaml
@@ -467,7 +471,7 @@ ECSの水平スケールとRolling Deploy時の新旧Task重複を含め、DB Co
 | `statement_timeout`                   | 15秒 | なし               | CloudFrontのorigin read timeout（既定30秒）より前にDB側で止め、詰まったクエリが5本の接続を塞ぎ続けないようにする。migrationはrunnerが1本ずつ上限を付ける |
 | `idle_in_transaction_session_timeout` | 30秒 | なし               | rollbackし損ねたトランザクションが行ロックを持ったまま残るのを断つ                                                                                       |
 
-長いクエリは、トランザクション内の`SET LOCAL statement_timeout`で個別に延ばします（README「データベース接続」）。
+長いクエリは、トランザクション内の`SET LOCAL statement_timeout`で個別に延ばします（`docs/development.md`の「長いクエリ」）。
 
 pg-poolは貸し出し中のclientからidle用のerrorリスナーを外し、Kyselyも付けません。そのままでは、`idle_in_transaction_session_timeout`の発火、RDSの再起動やフェイルオーバー、`pg_terminate_backend`でサーバーが接続を切ると、`uncaughtException`でAPIプロセスごと落ちます。`createDatabaseResources`は`pool.on("connect")`ですべてのclientにerrorリスナーを付けます。APIでは、そのリスナーが§13の要約（`summarizeError`）を通したJSONの1行（`level: "warn"`、`message: "database connection closed"`）を書き、`sqlState`（25P03、57P01など）で原因を見分けられるようにします。接続先を含むドライバのmessageは出しません。切れたclientはrelease時にpoolから外れ、次のリクエストは新しい接続で動きます。
 
@@ -996,7 +1000,7 @@ Migrationは、ECSタスク定義の`essential = false`のmigrationコンテナ�
 - **DDLのロック待ち:** 各migrationのトランザクションで`SET LOCAL lock_timeout = '5s'`と`statement_timeout = '5min'`を設定する。DDLが旧タスクの長いクエリの後ろで`ACCESS EXCLUSIVE`を待ち、その後ろにAPIのクエリが並んでテーブル全体が止まるのを防ぐ。
 - **再試行:** DDLの段階で`55P03`（lock timeout）になったときだけ、そのトランザクションを1・2・4・8秒の間隔で最大5回やり直す。旧タスクとの一時的な衝突でデプロイが落ちないようにする。ほかのSQLSTATEは再試行しない。
 - **advisory lockの待ち:** 後続のmigratorは、先行が残りを流し切るまで待つ。上限は「lockを取る前に数えた未適用の本数 × 1本あたりの最長時間W（10分）」で、最低10分。Wは、長く走る文1つ（5分）＋ロック待ち（5秒 × ロック取得の回数 × 5回）＋バックオフ15秒の約7分に余裕を持たせた値。上限を`lock_timeout`で付け、lockを取ったらすぐ`reset`する。上限に達したら、DDLの`55P03`とは別の専用メッセージで、再試行せずに失敗する。上限がなければ、先行が接続を保ったまま固まったとき、後続は際限なく待ち続ける（ECSに`startTimeout`がないので、その間デプロイも進まずcircuit breakerも発火しない）。先行の接続が切れているのにサーバーが気づかない場合も、OSのkeepalive（約2時間）までlockが解放されない。
-- **前提の保護:** 次のSQLを含むmigrationは、runnerがlockを取る前に拒否する。`statement_timeout`・`lock_timeout`への言及と`RESET ALL`（上限を延ばしたり外したりするとWの前提が崩れる）、トランザクションを制御する文（`BEGIN`・`COMMIT`・`ROLLBACK`・`START TRANSACTION`・`END`など。runnerのトランザクションの外に出ると、55P03の再試行で確定済みの文をもう一度流すことになる）。後者はコメント・文字列・dollar quoteの中を読み飛ばして文の先頭だけを見るので、PL/pgSQLの本体の`BEGIN … END`は拒否しない。長く走る文を1本に複数入れないことは、READMEで求めるだけで機械的には検出しない。
+- **前提の保護:** 次のSQLを含むmigrationは、runnerがlockを取る前に拒否する。`statement_timeout`・`lock_timeout`への言及と`RESET ALL`（上限を延ばしたり外したりするとWの前提が崩れる）、トランザクションを制御する文（`BEGIN`・`COMMIT`・`ROLLBACK`・`START TRANSACTION`・`END`など。runnerのトランザクションの外に出ると、55P03の再試行で確定済みの文をもう一度流すことになる）。後者はコメント・文字列・dollar quoteの中を読み飛ばして文の先頭だけを見るので、PL/pgSQLの本体の`BEGIN … END`は拒否しない。長く走る文を1本に複数入れないことは、`docs/development.md`で求めるだけで機械的には検出しない。
 - **失敗の見え方:** migrate CLIは、ロック待ちの上限・再試行の使い切り・statement timeoutの3つを固定の英文で出し、ドライバのmessageは出さない。migrationコンテナが終了コード1で終わるとAPIコンテナは起動せず、失敗が続けばdeployment circuit breakerがロールバックする。Rollbackは原則として旧アプリが新Schemaでも動くことによって成立させ、安易なdown migrationへ依存しません。
 
 ---
@@ -1223,7 +1227,7 @@ manifest の実装構造を守るテストは保守対象から外しました�
 
 実 AWS の identity / backend / plan / apply / destroy、ECR publication、ECS/RDS/Cognito/
 CloudFront/ADOT/X-Ray と deployed smoke は未検証です。ローカル Docker の受け入れ結果で
-それらの完了を主張しません。現行の操作手順は README の Terraform 節を参照してください。
+それらの完了を主張しません。現行の操作手順は `docs/aws.md` を参照してください。
 
 ### Corepackへの依存の解消（2026-08-15）
 
@@ -1241,7 +1245,7 @@ pnpmを入れます。API imageからはCorepackのshimを解決するためだ�
 `PNPM_HOME`とそのPATH追加も削除しました。
 
 引き換えに、ホストには実体のpnpmがPATH上に必要になります。Corepack経由で起動した
-場合は入れ子のpnpmがPATHに現れないため、README冒頭に`npm install --global pnpm`を
+場合は入れ子のpnpmがPATHに現れないため、READMEのクイックスタートに`npm install --global pnpm`を
 一度だけ実行する手順を追加しました。入れるバージョンは任意で、以後は宣言した
 11.15.1へpnpm自身が切り替えます。npmが実際に入れたパッケージが11.15.0でも、その
 バイナリをこのリポジトリ内で実行すると11.15.1を報告することを確認済みです。
