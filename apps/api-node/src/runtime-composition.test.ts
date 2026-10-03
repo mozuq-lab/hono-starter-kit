@@ -784,15 +784,21 @@ describe("createRuntimeComposition", () => {
   });
 
   it.each([
-    ["the registered secret", "fixture~secret.with+plus:colon", "/projects"],
+    [
+      "the registered secret",
+      "fixture~secret.with+plus:colon",
+      "/projects",
+      [],
+    ],
     [
       "a wrong secret",
       "wrong~secret.value+plus:colon",
-      "/login?error=authentication_failed",
+      "/login?error=authentication_failed&returnTo=%2Fprojects",
+      ["auth.external-login-callback.provider"],
     ],
   ])(
     "logs in as a confidential client with %s without logging the secret",
-    async (_name, configuredSecret, expectedLocation) => {
+    async (_name, configuredSecret, expectedLocation, expectedOperations) => {
       const registeredSecret = "fixture~secret.with+plus:colon";
       const fixture = await startOidcFixture({
         claims: { sub: "subject-1" },
@@ -830,6 +836,13 @@ describe("createRuntimeComposition", () => {
       expect(callback.status).toBe(303);
       expect(callback.headers.get("location")).toBe(expectedLocation);
       expect(fixture.requestCounts.token).toBe(1);
+      // 設定の誤り（シークレットの違い）が、IdP の段階の失敗として運用者に見える。
+      expect(
+        logLines
+          .map((line) => JSON.parse(line) as Record<string, unknown>)
+          .filter((entry) => entry.message === "suppressed error")
+          .map((entry) => entry.operation),
+      ).toEqual(expectedOperations);
       const logged = logLines.join("\n");
       for (const secret of [registeredSecret, configuredSecret]) {
         for (const form of clientSecretWireForms({

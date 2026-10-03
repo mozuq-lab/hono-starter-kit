@@ -207,7 +207,7 @@ describe("Node composition", () => {
     );
 
     expect(callback.headers.get("location")).toBe(
-      "/login?error=authentication_failed",
+      "/login?error=authentication_failed&returnTo=%2Fprojects",
     );
     const warnLines = logLines
       .map((line) => JSON.parse(line) as Record<string, unknown>)
@@ -215,8 +215,8 @@ describe("Node composition", () => {
     expect(warnLines).toHaveLength(1);
     expect(warnLines[0]).toMatchObject({
       message: "suppressed error",
-      operation: "auth.external-login-callback",
-      errorName: "Error",
+      operation: "auth.external-login-callback.provider",
+      errorName: "ExternalLoginFailedError",
     });
     expect(logLines.join("\n")).not.toContain("must-not-leak");
   });

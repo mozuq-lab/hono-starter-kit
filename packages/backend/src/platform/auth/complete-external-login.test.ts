@@ -104,18 +104,26 @@ describe("createCompleteExternalLogin", () => {
   );
 
   it.each([
-    ["missing", undefined, createProvider()],
-    ["expired", new Date("2026-08-10T00:00:00.000Z"), createProvider()],
+    ["missing", undefined, createProvider(), "transaction", undefined],
+    [
+      "expired",
+      new Date("2026-08-10T00:00:00.000Z"),
+      createProvider(),
+      "transaction",
+      undefined,
+    ],
     [
       "provider",
       new Date("2026-08-10T00:10:00.000Z"),
       createProvider(() =>
         Promise.reject(new Error("provider rejected raw_state")),
       ),
+      "provider",
+      "/projects",
     ],
   ])(
-    "collapses %s failures to a generic error",
-    async (_, expiresAt, provider) => {
+    "collapses %s failures to a generic error that names only the stage",
+    async (_, expiresAt, provider, stage, returnTo) => {
       const completeExternalLogin =
         expiresAt === undefined
           ? createCompleteExternalLogin({
@@ -127,14 +135,37 @@ describe("createCompleteExternalLogin", () => {
             })
           : await createCompleteLogin({ expiresAt, provider });
 
-      await expect(completeExternalLogin(validCallback)).rejects.toEqual(
-        new ExternalLoginFailedError(),
+      const error: unknown = await completeExternalLogin(validCallback).catch(
+        (rejection: unknown) => rejection,
       );
-      await completeExternalLogin(validCallback).catch((error: unknown) => {
-        expect(error).toBeInstanceOf(ExternalLoginFailedError);
-        expect(error).toMatchObject({ message: "External login failed" });
-        expect(error).not.toHaveProperty("cause");
+      expect(error).toBeInstanceOf(ExternalLoginFailedError);
+      expect(error).toMatchObject({
+        name: "ExternalLoginFailedError",
+        message: "External login failed",
+        stage,
       });
+      expect((error as ExternalLoginFailedError).returnTo).toBe(returnTo);
+      expect(error).not.toHaveProperty("cause");
     },
   );
+
+  it("reports a failing transaction store as the store stage without its error", async () => {
+    const store = new InMemoryExternalLoginTransactionStore();
+    store.consume = () =>
+      Promise.reject(new Error("connect ECONNREFUSED 10.0.1.5:5432"));
+    const completeExternalLogin = createCompleteExternalLogin({
+      clock: () => now,
+      hash: (value) => `hash:${value}`,
+      provider: createProvider(),
+      redirectUri: "https://app.example/auth/callback",
+      store,
+    });
+
+    const error: unknown = await completeExternalLogin(validCallback).catch(
+      (rejection: unknown) => rejection,
+    );
+    expect(error).toMatchObject({ stage: "store" });
+    expect(error).not.toHaveProperty("cause");
+    expect(JSON.stringify(error)).not.toContain("10.0.1.5");
+  });
 });
