@@ -7,6 +7,10 @@ import { DEFAULT_API_PORT, resolveApiPort } from "../api-port.js";
 const API_HOST = "127.0.0.1";
 const STARTUP_TIMEOUT_MS = 5_000;
 const STOP_TIMEOUT_MS = 2_000;
+// 直接の子が終わった後、残ったグループに与える猶予。API は SIGTERM を同時に受けているので、
+// これを過ぎても残るのは既存の接続を待っている場合で、試験用のプロセスなので待たずに落とす。
+// STOP_TIMEOUT_MS まで待つと、CPU を絞った Linux ではテストごとに約 2 秒ずつ延びた。
+const GROUP_EXIT_GRACE_MS = 500;
 const POLL_INTERVAL_MS = 50;
 const WORKSPACE_ROOT = fileURLToPath(new URL("../../..", import.meta.url));
 
@@ -24,6 +28,8 @@ type StoppableChild = {
 };
 
 type StopDependencies = {
+  groupExitGraceMs?: number;
+  isGroupAlive: () => boolean;
   sendSignal: SignalSender;
   stopTimeoutMs: number;
   waitForPortRelease: () => Promise<void>;
@@ -111,6 +117,35 @@ export const signalProcessGroup = (
   }
 };
 
+export type GroupProbe = (pid: number, signal: 0) => void;
+
+// signal 0 は届くかどうかだけを確かめる。EPERM はグループがまだ在るので生きている扱いにする。
+export const isProcessGroupAlive = (
+  pid: number,
+  probe: GroupProbe = (targetPid, signal) => {
+    process.kill(targetPid, signal);
+  },
+): boolean => {
+  try {
+    probe(-pid, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code !== "ESRCH";
+  }
+};
+
+const waitForGroupExitUntil = async (
+  isGroupAlive: () => boolean,
+  timeoutMilliseconds: number,
+) => {
+  const deadline = Date.now() + timeoutMilliseconds;
+  while (isGroupAlive()) {
+    if (Date.now() >= deadline) return false;
+    await delay(POLL_INTERVAL_MS);
+  }
+  return true;
+};
+
 // detached にした子は親のプロセスグループから外れるため、親が落ちても道連れにならない。
 // 親の終了時にグループごと確実に始末してポートの居座りを防ぐ。
 export const registerGroupExitGuard = (
@@ -133,7 +168,13 @@ export const createStop = (
   child: StoppableChild,
   exited: Promise<void>,
   hasExited: () => boolean,
-  { sendSignal, stopTimeoutMs, waitForPortRelease }: StopDependencies,
+  {
+    groupExitGraceMs = GROUP_EXIT_GRACE_MS,
+    isGroupAlive,
+    sendSignal,
+    stopTimeoutMs,
+    waitForPortRelease,
+  }: StopDependencies,
 ) => {
   let stopping: Promise<void> | undefined;
 
@@ -153,6 +194,19 @@ export const createStop = (
           terminate("SIGKILL");
           await exited;
         }
+      }
+
+      // 直接の子（pnpm）が終わっても、孫の tsx と API は終了処理の途中で生きていることがある。
+      // 生き残った API は listener を閉じた後も既存の接続（Vite のプロキシが使い回す接続など）に
+      // 応答するので、次のテストの要求に前のテストの scenario で答えてしまう。グループごと消える
+      // まで待つ。
+      const { pid } = child;
+      if (
+        pid !== undefined &&
+        !(await waitForGroupExitUntil(isGroupAlive, groupExitGraceMs))
+      ) {
+        signalProcessGroup(pid, "SIGKILL", sendSignal);
+        await waitForGroupExitUntil(isGroupAlive, stopTimeoutMs);
       }
 
       await waitForPortRelease();
@@ -312,6 +366,8 @@ export async function startApi(scenario: ApiScenario): Promise<ApiProcess> {
       : registerGroupExitGuard(child.pid, sendSignal, process);
 
   const stopChild = createStop(child, exited, () => childExited, {
+    isGroupAlive: () =>
+      child.pid !== undefined && isProcessGroupAlive(child.pid),
     sendSignal,
     stopTimeoutMs: STOP_TIMEOUT_MS,
     waitForPortRelease: () => waitForApiPortRelease(port),
