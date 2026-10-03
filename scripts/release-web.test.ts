@@ -232,6 +232,45 @@ test("release-web builds the web app from HEAD after the git check and before an
   });
 });
 
+const isLockedInstall = ({ command, args }: Call) =>
+  command === "pnpm" && args.join(" ") === "install --frozen-lockfile";
+
+// pull の後に install を忘れると、古い依存のまま build が通り、release.json だけが HEAD の
+// commit を名乗る。build の前に lockfile どおりの依存へ揃える。
+test("release-web installs the locked dependencies after the git check and before the build", async () => {
+  await withBuild(true, async (buildDirectory) => {
+    const { calls, commandRunner } = createFakeRunner();
+
+    await runReleaseWeb({ ...baseOptions(buildDirectory), commandRunner });
+
+    const installIndex = calls.findIndex(isLockedInstall);
+    const firstStatus = calls.findIndex(
+      ({ command, args }) => command === "git" && args[0] === "status",
+    );
+    assert.ok(installIndex > firstStatus && firstStatus >= 0);
+    assert.ok(installIndex < calls.findIndex(isWebBuild));
+    assert.equal(calls.filter(isLockedInstall).length, 1);
+  });
+});
+
+test("release-web builds and uploads nothing when the install fails", async () => {
+  await withBuild(true, async (buildDirectory) => {
+    const { calls, commandRunner } = createFakeRunner({
+      handler: (call) =>
+        isLockedInstall(call)
+          ? Promise.reject(new Error("pnpm exited with status 1"))
+          : undefined,
+    });
+
+    await assert.rejects(
+      runReleaseWeb({ ...baseOptions(buildDirectory), commandRunner }),
+      /pnpm exited with status 1/u,
+    );
+    assert.deepEqual(calls.filter(isWebBuild), []);
+    assert.deepEqual(s3Calls(calls), []);
+  });
+});
+
 test("release-web uploads nothing when the web build fails", async () => {
   await withBuild(true, async (buildDirectory) => {
     const { calls, commandRunner } = createFakeRunner({
