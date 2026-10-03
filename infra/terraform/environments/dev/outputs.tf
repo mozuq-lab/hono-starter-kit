@@ -54,6 +54,11 @@ output "app_origin" {
   value       = module.edge.app_origin
 }
 
+output "alb_dns_name" {
+  description = "DNS name of the internal ALB. The deployed smoke test confirms it resolves only to private addresses."
+  value       = module.ingress.alb_dns_name
+}
+
 output "oidc_issuer" {
   description = "OIDC issuer URL for the application identity provider."
   value       = module.identity.oidc_issuer

@@ -24,6 +24,7 @@
     "rds-ca:refresh": "node scripts/rds-ca.ts",
     "release:api": "node scripts/release-api.ts",
     "release:web": "node scripts/release-web.ts",
+    "smoke:dev": "node scripts/smoke-dev.ts",
     "terraform": "node scripts/terraform.ts",
     "terraform:teardown": "node scripts/terraform-teardown.ts",
     "terraform:fmt": "node scripts/terraform-checks.ts fmt",

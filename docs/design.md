@@ -826,15 +826,17 @@ PlaywrightはChromium、Firefox、WebKitを同じAPIで操作でき、Actionabil
 
 ## Deployed Smoke Test
 
-ローカルのVite Proxyでは検出できないCloudFront、ALB、Cookie、Cache Policyの不整合を、dev環境へのデプロイ後に確認します。
+ローカルのVite Proxyでは検出できないCloudFront、ALB、Cookie、Cache Policyの不整合を、dev環境へのデプロイ後に`pnpm smoke:dev`で確認します（手順は`docs/aws.md`）。秘密情報もログインも使わず、HTTPとDNSだけで次を確かめます。
 
-- `/projects/example`への直接アクセスが`index.html`を200で返す
-- 存在しない`.js`や画像は`index.html`ではなく404を返す
-- `/auth/callback`へQuery Stringが転送される
-- POST、PATCH、DELETEがCloudFront経由で到達する
-- 異なる2Sessionの`/api/me`が共有キャッシュされない
-- SPAとAPIの双方へ期待するSecurity Headerが付与される
-- ALBのOriginへInternetから直接アクセスできない
+- `/projects/example`への直接アクセスが、`/`と同じ`index.html`を200で返す
+- 存在しない`.js`や画像は`index.html`ではなく403または404を返す（S3はOACに`ListBucket`を許していないので、403になる見込み。実AWSでは未確認）
+- `/auth/login`がIdPの認可エンドポイントへ303で向かう（`/auth/*`がAPIまで届く）
+- Cookieなしで送ったPOST、PATCH、DELETEが、CloudFrontを通ってHonoのProblem（401または404）を受け取る
+- 異なる偽のCookieで2回ずつ送った`/api/me`（401）と`/auth/*`の未定義ルート（404）が、どれも`Cache-Control: no-store`で、組ごとに別々の`requestId`を返す（キャッシュされた応答なら同じ`requestId`になる）。CloudFrontは401をキャッシュしないので、キャッシュされうる404でもAPI behaviorのCache Policyを確かめる。`/api/*`と`/auth/*`は同じbehaviorの定義から作られ、同じCache Policyを持つ
+- SPAとAPIの双方へ、`infra/terraform/modules/edge/main.tf`のResponse Headers Policyと同じSecurity Headerが付与される
+- ALBのDNS名がprivateアドレスにだけ解決される（Internetから直接届かない）
+
+`/auth/callback`へQuery Stringが転送されることは確かめません。callbackはどの失敗でも同じ303を返し、外から観測できないためです。転送はAPI behaviorのOrigin Request Policy（AllViewerExceptHostHeader）が担い、そのIDはedgeのTerraformテストが固定しています。本物のセッションでの確認（ログイン後の`/api/me`が利用者ごとに違うこと）も、秘密情報を持たないために行いません。
 
 ---
 
