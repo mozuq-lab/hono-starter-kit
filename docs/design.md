@@ -1250,9 +1250,26 @@ Secrets Managerの`AWSCURRENT`を取得します。取得失敗時のSDK診断�
 ローカル state / plan は利用でき、Git への追加を検査で拒否します。文章の固定表現や独自
 manifest の実装構造を守るテストは保守対象から外しました。
 
-実 AWS の identity / backend / plan / apply / destroy、ECR publication、ECS/RDS/Cognito/
-CloudFront/ADOT/X-Ray と deployed smoke は未検証です。ローカル Docker の受け入れ結果で
-それらの完了を主張しません。現行の操作手順は `docs/aws.md` を参照してください。
+この時点では、実 AWS の identity / backend / plan / apply / destroy、ECR publication、
+ECS/RDS/Cognito/CloudFront/ADOT/X-Ray と deployed smoke は未検証でした。実 AWS での確認は次の節に
+書きます。現行の操作手順は `docs/aws.md` を参照してください。
+
+### 実 AWS での確認（2026-10-04）
+
+`docs/aws.md` の手順で dev 環境を作り、API イメージと web 資産を公開しました。上の完了条件のうち、
+次を実環境で確かめました。
+
+- 2・3: bootstrap と dev を `apply` し、非公開 S3 + OAC、CloudFront、内部 ALB + VPC Origin、ECS、
+  RDS で動いた。
+- 4・5・7: `pnpm smoke:dev` の 8 項目がすべて成功した（SPA の deep link、存在しない資産、
+  `/auth/*` と `/api/*` の到達、API の応答がキャッシュされないこと、Security Header、ALB が
+  private アドレスにだけ解決されること）。smoke test が観測できない `/auth/callback` への Query
+  String と取引用 Cookie の転送も、Cognito でのサインインが成功したことで確かめた。
+- 6: `release:api` と `release:web` が、それぞれ一度だけ build した成果物を dev に置けた。stg・prod
+  が無いので、環境をまたぐ昇格はまだ確かめていない。
+
+環境の削除、2 回目以降の API の切り替え、デプロイした環境での Projects の操作とサインアウト、
+X-Ray へのトレースは、まだ確かめていません（README の「検証済みの範囲」）。
 
 ### Corepackへの依存の解消（2026-08-15）
 

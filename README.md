@@ -77,6 +77,12 @@ pnpm dev
 
 ## 検証済みの範囲
 
+実 AWS の dev 環境で確かめたもの（2026-10-04）:
+
+- `docs/aws.md` の手順での環境の作成（bootstrap と dev の `apply`）と、`release:api` / `release:web` による初回の公開
+- `pnpm smoke:dev` の全 8 項目
+- Cognito でのサインイン（CloudFront と ALB を通る `/auth/login` → `/auth/callback`）
+
 ローカルで検証済みのもの:
 
 - Compose の開発スタックと本番用 API イメージ（`pnpm check:docker`）
@@ -86,12 +92,10 @@ pnpm dev
 
 まだ検証していないもの:
 
-- 実 AWS での環境の作成・更新・削除と、`release:api` / `release:web` の実行（ローカルの
-  受け入れ検証は空の AWS ディレクトリーと provider mock を使い、実 AWS のアカウント照合や
-  サービスの挙動は証明しない）
-- `pnpm smoke:dev`（デプロイした環境の smoke test）の実環境での実行と、ログインを伴うプロバイダーとの結合
+- 実 AWS での環境の削除（`pnpm terraform:teardown`）と、2 回目以降の API の切り替え（`release:api` の後の `apply`）
+- デプロイした環境での Projects の操作とサインアウト
 - 実際の IdP（Entra ID、Cognito など）に対するコンフィデンシャルクライアントとしての動作
-- 本番の送信先（ADOT 経由の X-Ray）で、500 の `exception` イベントが例外として表示されるか
+- 本番の送信先（ADOT 経由の X-Ray）にトレースが届くか、500 の `exception` イベントが例外として表示されるか
 
 ## ドキュメント
 
