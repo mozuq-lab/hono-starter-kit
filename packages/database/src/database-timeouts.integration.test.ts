@@ -81,7 +81,7 @@ it("cancels an API statement that exceeds statement_timeout", async () => {
     code: "57014",
   });
 
-  // README に書く延ばし方: トランザクション内の SET LOCAL だけが延びる。
+  // docs/development.md に書く延ばし方: トランザクション内の SET LOCAL だけが延びる。
   const client = await api.pool.connect();
   try {
     await client.query("begin");
