@@ -14,19 +14,15 @@
 
 ## 初回起動
 
-pnpm がホストに入っていなければ一度だけ入れてください。入れるバージョンは問いません。
-このリポジトリは `packageManager` と `devEngines.packageManager` の両方で pnpm 11.15.1
-を宣言しており、pnpm はワークスペースのコマンドを実行する前に自分をそのバージョンへ
-切り替えます。
+pnpm がホストに入っていなければ一度だけ入れてください。入れるバージョンは問わず、
+このリポジトリの中では pnpm が宣言済みの 11.15.1 へ自分を切り替えます。
 
 ```sh
 npm install --global pnpm
 ```
 
-npm も `devEngines.packageManager` を読むため、このリポジトリの中ではプロジェクト単位の
-コマンドを `EBADDEVENGINES` で拒否します。これは意図した動作です。うっかり
-`npm install` して `pnpm-lock.yaml` の隣に2つ目のロックファイルができるのを防いでいます。
-上のグローバルインストールは影響を受けません。
+このリポジトリの中で `npm install` などを実行すると、`EBADDEVENGINES` で拒否されます。
+意図した動作です（理由は `docs/design.md` の「19. v0.1の実装範囲」）。
 
 ```sh
 pnpm install --frozen-lockfile
@@ -112,16 +108,8 @@ API プロセスとマイグレーションの実行には、次の任意の設�
 
 ### タイムアウトと長いクエリ
 
-API の接続には次の上限があります。値は `apps/api-node/src/database-session-policy.ts` の
-`apiSessionPolicy` にあり、環境変数では変えられません。
-
-| 項目                                  | 値    | 意味                                                                                  |
-| ------------------------------------- | ----- | ------------------------------------------------------------------------------------- |
-| 接続数                                | 5     | タスク 1 つあたりの pool の上限                                                       |
-| `connectionTimeoutMillis`             | 5 秒  | 接続の確立（TLS・認証・Secrets Manager からの password の取得を含む）と空き待ちの上限 |
-| `idleTimeoutMillis`                   | 5 分  | 使われていない接続を閉じるまでの時間                                                  |
-| `statement_timeout`                   | 15 秒 | 1 文の実行時間の上限。超えると SQLSTATE `57014` で失敗します                          |
-| `idle_in_transaction_session_timeout` | 30 秒 | トランザクションを開いたまま何もしない接続を、サーバーが切るまでの時間                |
+API の接続の上限値とその理由は `docs/design.md` の「7. DBアクセス」にあります。
+API の `statement_timeout` は 15 秒で、超えた文は SQLSTATE `57014` で失敗します。
 
 15 秒より長くかかる正当なクエリ（集計やエクスポート）は、トランザクションの中で
 `SET LOCAL statement_timeout` を使えば、そのトランザクションだけ延ばせます。
@@ -140,13 +128,9 @@ await db.transaction().execute(async (trx) => {
 
 ### マイグレーションの上限と再試行
 
-AWS では、マイグレーションは ECS タスクが起動するたびに sidecar として走ります。デプロイでも
-スケールアウトでも再起動でも走り、旧タスクが本番のトラフィックを捌いている最中に走ります。
-複数のタスクが同時に起動すると、migrator 同士が advisory lock を取り合います。そのため runner は
-次のように動きます。
+AWS では、マイグレーションは ECS タスクが起動するたびに sidecar として走ります。runner の
+上限と再試行の設計は `docs/design.md` の「B. AWS Split Profile」にあります。
 
-- 各マイグレーションのトランザクションで `SET LOCAL lock_timeout = '5s'` と
-  `SET LOCAL statement_timeout = '5min'` を設定します。
 - ロック待ちで失敗した（`55P03`）ときだけ、そのトランザクションを 1・2・4・8 秒の間隔で
   最大 5 回まで実行し直します。使い切ると
   「Database migration could not acquire a table lock after 5 attempts.」で止まります。
@@ -173,29 +157,8 @@ AWS では、マイグレーションは ECS タスクが起動するたびに s
 
 ## 認証
 
-認証は DDD-lite な Clean / Hexagonal 境界の上に載っています。
-
-```text
-Dev Login (packages/backend) / OIDC アダプター (apps/api-node)
-        ↓
-プロバイダー非依存のポートとユースケース (packages/backend)
-        ↓
-VerifiedIdentity → アプリケーションセッション
-        ↓
-PostgreSQL アダプター (packages/database) → Actor
-```
-
-ブラウザーが受け取るのは、アプリケーションが所有する HttpOnly のセッション Cookie だけ
-です。生のセッション ID は PostgreSQL に保存する前にハッシュ化されます。外部ログイン
-トランザクションは一度きりの PostgreSQL レコードで、中身は state・nonce・PKCE verifier の
-SHA-256 ハッシュと、検証済みの相対リターンパス、作成時刻と失効時刻だけです。プロバイダーの
-トークンが `apps/api-node` のアダプター境界を越えることも、アプリケーションセッションに
-入ることもありません。
-
-ローカル開発は Dev Login アダプターを既定にしています。本番用のアダプターは、プロバイダー
-非依存の OIDC Authorization Code + PKCE S256 です。パブリッククライアントとしての動作は、
-ローカルでの受け入れ検証を済ませています。ID トークンを検証し、`VerifiedIdentity` だけを
-マッピングします。OIDC を使うには、次の非機密な認証環境変数を設定します。任意の
+認証の構造、セッションと Cookie、サインアウトの流れは `docs/design.md` の「8. 認証・認可」に
+あります。ローカル開発は Dev Login を既定にしています。OIDC を使うには、次の非機密な認証環境変数を設定します。任意の
 クライアントシークレットについては表の後で説明します。
 
 | 名前                                 | 契約                                                                                                                 |
@@ -225,20 +188,8 @@ SHA-256 ハッシュと、検証済みの相対リターンパス、作成時刻
 テストフィクスチャーでしか許可されません。本番はアプリケーション・issuer・ログアウト
 エンドポイントのすべてに HTTPS を要求します。
 
-本番の Cookie 属性は固定です。
-
-- アプリケーションセッション: `__Host-session`。`HttpOnly`、`Secure`、`SameSite=Lax`、
-  `Path=/`、`Domain` 属性なし、`Max-Age` は設定された絶対寿命と同じ。
-- ログイントランザクション: `__Secure-oidc-transaction`。`HttpOnly`、`Secure`、
-  `SameSite=Lax`、`Path=/auth/callback`、`Domain` 属性なし、`Max-Age` は設定された
-  ログイントランザクション TTL と同じ。
-
-サインアウトはまず `POST /auth/logout` でアプリケーションセッションを失効させます。
-続いて Web アプリがクエリキャッシュを破棄し、固定ルート `GET /auth/provider-logout` へ
-トップレベル遷移します。このルートは OIDC モードでは設定されたプロバイダーのログアウト
-URL へ、Dev モードでは `/login` へリダイレクトします。リダイレクト先を API のレスポンスや
-クエリ文字列から受け取ることはありません。OIDC のログアウトでは、設定されたリダイレクト
-パラメーターで公開 `client_id` と固定の `<APP_ORIGIN>/login` を必ず送ります。
+本番の Cookie の `Max-Age` は、`__Host-session` が `SESSION_ABSOLUTE_TTL_SECONDS`、
+`__Secure-oidc-transaction` が `OIDC_LOGIN_TRANSACTION_TTL_SECONDS` と同じ値になります。
 
 Dev 認証は本番では禁止です。`AUTH_PROVIDER=dev` と `NODE_ENV=production` を同時に設定
 すると、匿名や開発用の identity にフォールバックせず、API の起動そのものが失敗します。
@@ -271,22 +222,8 @@ Jaeger UI: http://127.0.0.1:16686
 - `OTEL_SERVICE_NAME`: テレメトリーが有効なときに使う任意のサービス名。既定は
   `hono-starter-api` です。
 
-SERVER span の名前は `POST /api/projects` のようにルート単位になります。500 になった要求は、
-テレメトリーの有無にかかわらず stdout へ JSON を 1 行（`"message": "unexpected error"`）出し
-ます。Request ID、trace ID（テレメトリー有効時）、ルートのパターン、status、例外の型名と
-スタックのフレーム行が入ります。message は `TypeError`・`RangeError`・`ReferenceError` の
-ときだけ先頭 200 文字まで、PostgreSQL のエラーは SQLSTATE だけを出し、生のパス、クエリ、
-ヘッダは出しません。同じ要約を SERVER span の `exception` イベントにも付けます。本番の送信先
-（ADOT 経由の X-Ray）でこのイベントが例外として表示されるかは未検証です。アクセスログは
-出しません。
-
-応答は成功させたが失敗は残したい処理（ログイン時の古いセッションの掃除など）は、同じ要約を
-`"level": "warn"`、`"message": "suppressed error"` の 1 行で出し、処理を表す固定の文字列
-`operation`（例: `auth.session-cleanup`）を付けます。サーバーが DB 接続を切ったとき
-（再起動、フェイルオーバー、`idle_in_transaction_session_timeout` など）は、
-`"level": "warn"`、`"message": "database connection closed"` の 1 行を出します。PostgreSQL の
-エラーなら `sqlState`（`25P03`、`57P01` など）で原因を見分けられます。API のプロセスは落ちず、
-次の要求は新しい接続で動きます。
+500 になった要求などのログの形式と、何を出さないかは `docs/design.md` の「13. 可観測性」に
+あります。
 
 ## Projects サンプル
 
@@ -299,13 +236,8 @@ SERVER span の名前は `POST /api/projects` のようにルート単位にな�
 
 古いバージョンでの更新は `409` を返し、UI はサーバーが確定した状態へ更新します。
 
-各ユーザーは自分が作成した Project だけを読み書きできます。他人の Project は、一覧に出ず、
-取得・リネーム・アーカイブのいずれも存在しない Project と同じ `404`（`PROJECT_NOT_FOUND`）に
-なります。これは資源単位の認可の型を示すためのものです。チームで共有するアプリにするなら、
-repository の絞り込み条件を共有の規則に置き換えてください。Session の `roles` は今はどの
-判断にも使っていません。Tenant 境界と RBAC は v0.2 で入れる予定です（`docs/roadmap.md`）。
-
-一覧は作成日時の新しい順に並びます。ページングはありません。
+各ユーザーは自分が作成した Project だけを読み書きできます（設計は `docs/design.md` の
+「8. 認証・認可」）。
 
 `pnpm db:seed` が作る Alpha は、Dev Login の利用者が所有します。seed より先に Dev Login で
 ログインしていても、そのとき作られた利用者が所有者になります。seed は開発用です。
