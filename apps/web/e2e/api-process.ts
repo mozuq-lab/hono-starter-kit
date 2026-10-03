@@ -1,4 +1,5 @@
 import { spawn, type SpawnOptions } from "node:child_process";
+import { get } from "node:http";
 import { createServer } from "node:net";
 import { fileURLToPath } from "node:url";
 import { DEFAULT_API_PORT, resolveApiPort } from "../api-port.js";
@@ -184,20 +185,49 @@ export const createApiSpawnOptions = ({
   stdio: ["ignore", "ignore", "pipe"],
 });
 
+export type HealthProbe = (
+  url: string,
+  timeoutMilliseconds: number,
+) => Promise<number>;
+
+// 接続プールを使わず毎回新しい接続で確かめる。停止中の前の API は listener を閉じたあとも
+// 終了するまで既存の接続に応答するので、使い回すと起動前の次の API を ready と誤認する。
+export const probeHealth: HealthProbe = (url, timeoutMilliseconds) =>
+  new Promise<number>((resolve, reject) => {
+    const request = get(
+      url,
+      { agent: false, timeout: timeoutMilliseconds },
+      (response) => {
+        response.resume();
+        response.once("end", () => {
+          resolve(response.statusCode ?? 0);
+        });
+      },
+    );
+    request.once("timeout", () => {
+      request.destroy(new Error("Health probe timed out."));
+    });
+    request.once("error", reject);
+  });
+
 export const waitForApiReady = async ({
   childExited,
   getExitDescription,
   getSpawnError,
   getStderr,
   url,
+  timeoutMs = STARTUP_TIMEOUT_MS,
+  probe = probeHealth,
 }: {
   childExited: () => boolean;
   getExitDescription: () => string;
   getSpawnError: () => Error | undefined;
   getStderr: () => string;
   url: string;
+  timeoutMs?: number;
+  probe?: HealthProbe;
 }) => {
-  const deadline = Date.now() + STARTUP_TIMEOUT_MS;
+  const deadline = Date.now() + timeoutMs;
 
   while (Date.now() < deadline) {
     const pollStartedAt = Date.now();
@@ -213,14 +243,12 @@ export const waitForApiReady = async ({
 
     const remainingMilliseconds = deadline - Date.now();
     try {
-      const response = await fetch(url, {
-        signal: AbortSignal.timeout(
-          Math.max(1, Math.min(POLL_INTERVAL_MS, remainingMilliseconds)),
-        ),
-      });
-      await response.arrayBuffer();
+      const status = await probe(
+        url,
+        Math.max(1, Math.min(POLL_INTERVAL_MS, remainingMilliseconds)),
+      );
 
-      if (response.status === 200) return;
+      if (status === 200) return;
     } catch {
       // 子プロセスの起動中は接続に失敗して当然なので、握りつぶして次の試行へ進む。
     }
@@ -233,7 +261,7 @@ export const waitForApiReady = async ({
   }
 
   throw new Error(
-    `API process did not become ready within ${STARTUP_TIMEOUT_MS} ms.\nstderr:\n${getStderr() || "(empty)"}`,
+    `API process did not become ready within ${String(timeoutMs)} ms.\nstderr:\n${getStderr() || "(empty)"}`,
   );
 };
 
