@@ -105,7 +105,8 @@ cp infra/terraform/environments/dev/terraform.tfvars.example infra/terraform/env
 - 両 root の `aws_account_id` は必須で、AWS Provider の `allowed_account_ids` に渡されます。
 - S3 backend は別に認証するため、`backend.hcl` の `allowed_account_ids` にも同じアカウントを
   指定します。認証情報のアカウントと違うと、`init` が `AWS account ID not allowed` で止まります。
-- dev の `api_repository_arn`・`api_image`・`adot_image` は、手順 4 で埋めます。どれも dev の
+- dev の `api_repository_arn`・`api_image`・`adot_image` は、手順 4 で埋めます。設定例にコメントアウトした
+  行があるので、値を決めたら `#` を外します（`api_image` は `release:api` が書き込みます）。どれも dev の
   `terraform.tfvars` に書く値で、bootstrap の `terraform.tfvars` には書きません。
 
 fork したリポジトリで変える値（`project`、bucket 名など）は `docs/forking.md` にあります。
