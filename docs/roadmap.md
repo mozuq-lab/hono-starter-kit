@@ -70,6 +70,15 @@
 - 何を: Cloudflare WorkersやAWS Lambdaを、追加のプロファイルとして用意する。
 - なぜ: HonoのRouteはWeb Standards上で共通化できるが、PostgreSQL Driver、Queue、Object Storage、Secret、Telemetry Exporter、AsyncLocalStorage、コネクションプールなどはランタイムごとに違う。これらをAdapterとして分けてから対応する。最初から全ランタイムを目指すと、最小公倍数の設計に引っ張られるので、Node.jsを標準のランタイムにしている。
 - どの版で: 未定
+- Cloudflare Workersについて調べたこと（2026-10-04。対応はいったん見送った）:
+  - 想定した形: APIとWebを1つのWorkerで配信し、`/api/*`と`/auth/*`をHonoで処理し、それ以外をStatic Assetsで返す。同一オリジンのまま、CookieとCSPの前提を保てる。リソースはTerraformのCloudflare providerで作り、コードの配布は`wrangler deploy`を使うリリーススクリプトに分ける（AWSでTerraformと`pnpm release:api`を分けているのと同じ）。
+  - `packages/backend`の依存はHono、Zod、`@opentelemetry/api`だけで、Workersでもほぼそのまま動く見込み。Workers用の組み立て役（`apps/api-workers`）を新しく作り、設定をバインディングから読み、SecretをWorkers Secretsから読む。
+  - `nodejs_compat`を有効にすれば、`session-crypto.ts`の`node:crypto`と`pg`は書き換えずに使える見込み。`fs`は使えないので、起動時のマイグレーション確認は、ファイルを読む代わりにビルド時に一覧とハッシュを埋め込む。適用はこれまでどおりNodeから行う。
+  - PostgreSQLはHyperdrive経由でつなぐ。`packages/database/src/database.ts`はプロセスの生存中にpoolを使い回し、`createRequire`で`pg`を読んでいるので、リクエストごとに接続を作る形へ分ける必要がある。接続先は外部のPostgreSQL（Neonなど）か今のRDS。非公開のRDSにはCloudflare Tunnelが要る。
+  - D1は改修が大きい。マイグレーションがPostgreSQL固有の機能（`timestamptz`、`text[]`、正規表現の`check`、部分インデックス、`btrim`）を使っている。さらに`auth-session-store.kysely.ts`と`project.unit-of-work.kysely.ts`がトランザクションの途中でアプリの処理を挟み、`forUpdate()`で行ロックを取っている。D1はこの形のトランザクションに対応せずbatchしかないので、セッション管理と楽観ロックを作り直すことになる。R2はObject Storageで、DBの代わりにはならない（「Files」の置き場所の候補）。
+  - 認証のコードにCognito専用の処理はなく、OIDCの設定値（`OIDC_ISSUER`など）だけでつながっている。Cognitoを続けるなら、Workerの`/auth/callback`と`/login`をアプリクライアントに登録すれば足りる。AWSから離れるなら、OIDCに対応した別のIdPを選ぶ。
+  - OpenTelemetryのNode版SDKはWorkersで使えない。Cloudflareのobservabilityを使うか、最初は対象外にする。
+  - 見送った理由: このスターターが対象にする業務システムは、1つのリージョンにあるリレーショナルDBとトランザクションを中心にしている。処理を利用者の近くで動かしても、DBまでの往復は短くならないので、得られるものが少ない。
 
 ## 未実装のCore
 
